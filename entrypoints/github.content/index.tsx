@@ -5,19 +5,6 @@ import { isPrPagePath, readPullRequestState } from '@/lib/pull-request';
 import { App } from './App';
 import './style.css';
 
-/** Classic and React PR headers; when neither is found the button floats in the corner instead. */
-const HEADER_ACTION_SELECTORS = ['.gh-header-show .gh-header-actions', '[data-component="PH_Actions"]'];
-
-/** GitHub hides the React header actions with `d-none` at some widths, so only visible containers count. */
-function findHeaderActions(): Element | null {
-  for (const selector of HEADER_ACTION_SELECTORS) {
-    for (const element of document.querySelectorAll(selector)) {
-      if (element.checkVisibility()) return element;
-    }
-  }
-  return null;
-}
-
 function shouldShowButton(): boolean {
   if (!isPrPagePath(location.pathname)) return false;
   const state = readPullRequestState();
@@ -34,15 +21,9 @@ export default defineContentScript({
       name: 'slack-review-request',
       position: 'inline',
       isolateEvents: true,
-      anchor: () => findHeaderActions() ?? document.body,
-      append: (anchor, element) => {
-        if (anchor === document.body) anchor.append(element);
-        else anchor.prepend(element);
-      },
-      onMount: (container, _shadow, host) => {
-        const floating = !findHeaderActions();
-        host.classList.toggle('floating', floating);
-        render(<App floating={floating} />, container);
+      anchor: () => document.body,
+      onMount: (container) => {
+        render(<App />, container);
         return container;
       },
       onRemove: (container) => {
@@ -56,11 +37,7 @@ export default defineContentScript({
         if (host.isConnected) ui.remove();
         return;
       }
-      const parent = findHeaderActions() ?? document.body;
-      if (!host.isConnected || host.parentElement !== parent) {
-        ui.remove();
-        ui.mount();
-      }
+      if (!host.isConnected) ui.mount();
     };
 
     let scheduled = false;
