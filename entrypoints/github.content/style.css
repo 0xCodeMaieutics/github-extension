@@ -1,11 +1,5 @@
 /* WXT resets the host with `:host { all: initial !important }`; these selectors are more specific. */
-:host(:not(.floating)) {
-  display: inline-block !important;
-  margin-right: 8px !important;
-  vertical-align: middle !important;
-}
-
-:host(.floating) {
+:host {
   position: fixed !important;
   right: 24px !important;
   bottom: 24px !important;
@@ -31,40 +25,38 @@ textarea {
 .trigger {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  height: 32px;
-  padding: 0 12px;
-  font-size: 14px;
-  font-weight: 500;
-  white-space: nowrap;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  padding: 0;
   cursor: pointer;
-  color: var(--button-default-fgColor-rest, var(--fgColor-default, #25292e));
   background: var(--button-default-bgColor-rest, #f6f8fa);
   border: 1px solid var(--button-default-borderColor-rest, var(--borderColor-default, #d1d9e0));
-  border-radius: 6px;
+  border-radius: 50%;
+  box-shadow: var(--shadow-floating-medium, 0 8px 24px rgba(66, 74, 83, 0.2));
+  transition: transform 120ms ease;
 }
 
 .trigger:hover {
   background: var(--button-default-bgColor-hover, #eff2f5);
+  transform: scale(1.06);
 }
 
-.trigger--floating {
-  height: 40px;
-  padding: 0 16px;
-  border-radius: 20px;
-  box-shadow: var(--shadow-floating-medium, 0 8px 24px rgba(66, 74, 83, 0.2));
-}
-
-.panel {
-  position: fixed;
-  z-index: 100;
-  width: 360px;
-  max-height: min(600px, calc(100vh - 80px));
+.dialog {
+  box-sizing: border-box;
+  width: min(440px, calc(100vw - 32px));
+  max-height: min(680px, calc(100vh - 64px));
+  padding: 0;
   overflow: auto;
+  color: inherit;
   background: var(--overlay-bgColor, var(--bgColor-default, #ffffff));
   border: 1px solid var(--borderColor-default, #d1d9e0);
   border-radius: 12px;
   box-shadow: var(--shadow-floating-large, 0 12px 48px rgba(31, 35, 40, 0.3));
+}
+
+.dialog::backdrop {
+  background: var(--overlay-backdrop-bgColor, rgba(31, 35, 40, 0.5));
 }
 
 .panel__header {

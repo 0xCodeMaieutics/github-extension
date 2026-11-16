@@ -25,43 +25,51 @@ function toPreview(text: string, members: SlackMember[]): string {
     .replace(/&amp;/g, '&');
 }
 
-export function App({ floating }: { floating: boolean }) {
+export function App() {
   const [open, setOpen] = useState(false);
-  const buttonRef = useRef<HTMLButtonElement>(null);
-  const rootRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onPointerDown = (event: PointerEvent) => {
-      if (rootRef.current && !event.composedPath().includes(rootRef.current)) setOpen(false);
-    };
-    const onKeyDown = (event: KeyboardEvent) => event.key === 'Escape' && setOpen(false);
-    document.addEventListener('pointerdown', onPointerDown, true);
-    rootRef.current?.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.removeEventListener('pointerdown', onPointerDown, true);
-      rootRef.current?.removeEventListener('keydown', onKeyDown);
-    };
-  }, [open]);
 
   return (
-    <div ref={rootRef} class="root">
+    <div class="root">
       <button
-        ref={buttonRef}
         type="button"
-        class={floating ? 'trigger trigger--floating' : 'trigger'}
+        class="trigger"
+        aria-label="Request PR review"
+        title="Request PR review"
+        aria-haspopup="dialog"
         aria-expanded={open}
-        onClick={() => setOpen(!open)}
+        onClick={() => setOpen(true)}
       >
-        <SlackIcon />
-        <span>Request PR review</span>
+        <SlackIcon size={24} />
       </button>
-      {open && <Panel anchor={buttonRef.current} floating={floating} onClose={() => setOpen(false)} />}
+      {open && <Dialog onClose={() => setOpen(false)} />}
     </div>
   );
 }
 
-function Panel({ anchor, floating, onClose }: { anchor: HTMLElement | null; floating: boolean; onClose: () => void }) {
+/** A native modal `<dialog>`, which traps focus, closes on Escape and returns focus to the trigger. */
+function Dialog({ onClose }: { onClose: () => void }) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    dialog?.showModal();
+    return () => dialog?.close();
+  }, []);
+
+  return (
+    <dialog
+      ref={dialogRef}
+      class="dialog"
+      aria-label="Request PR review on Slack"
+      onClose={onClose}
+      onClick={(event) => event.target === dialogRef.current && onClose()}
+    >
+      <Panel onClose={onClose} />
+    </dialog>
+  );
+}
+
+function Panel({ onClose }: { onClose: () => void }) {
   const pullRequest = useMemo<PullRequest | null>(() => readPullRequest(), []);
   const [load, setLoad] = useState<Load>({ status: 'loading' });
   const [destinationType, setDestinationType] = useState<Destination['type']>('channel');
@@ -91,13 +99,6 @@ function Panel({ anchor, floating, onClose }: { anchor: HTMLElement | null; floa
     };
   }, []);
 
-  const position = useMemo(() => {
-    const rect = anchor?.getBoundingClientRect();
-    if (!rect) return {};
-    const right = `${Math.max(8, window.innerWidth - rect.right)}px`;
-    return floating ? { right, bottom: `${window.innerHeight - rect.top + 8}px` } : { right, top: `${rect.bottom + 8}px` };
-  }, [anchor, floating]);
-
   const developers = load.status === 'ready' ? load.developers : [];
 
   const destination: Destination | null =
@@ -124,7 +125,7 @@ function Panel({ anchor, floating, onClose }: { anchor: HTMLElement | null; floa
   };
 
   return (
-    <div class="panel" role="dialog" aria-label="Request PR review on Slack" style={position}>
+    <div class="panel">
       <header class="panel__header">
         <SlackIcon size={18} />
         <strong>Request PR review</strong>

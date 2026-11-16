@@ -42,4 +42,4 @@ pnpm compile   # type-check
 pnpm zip       # package for the Chrome Web Store
 ```
 
-GitHub serves both a classic and a React pull request header. The button goes into the header's actions when it can find them, and floats in the bottom-right corner otherwise.
+The button floats in the bottom-right corner of the PR Page, independent of GitHub's classic and React pull request headers. Clicking it opens the Review Request form in a dialog.
