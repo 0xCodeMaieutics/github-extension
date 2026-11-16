@@ -1,7 +1,7 @@
 import { render } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { SlackIcon } from '@/components/SlackIcon';
-import { defaultChannel, defaultReviewers, slackToken, type ChannelRef, type MemberRef } from '@/lib/settings';
+import { defaultChannel, developers as developersSetting, slackToken, type ChannelRef, type MemberRef } from '@/lib/settings';
 import {
   listChannels,
   listMembers,
@@ -31,7 +31,7 @@ function Settings() {
   const [channels, setChannels] = useState<SlackChannel[]>([]);
   const [selectedChannel, setSelectedChannel] = useState<ChannelRef | null>(null);
   const [members, setMembers] = useState<SlackMember[]>([]);
-  const [reviewers, setReviewers] = useState<MemberRef[]>([]);
+  const [developers, setDevelopers] = useState<MemberRef[]>([]);
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState<Status>({ type: 'idle' });
 
@@ -52,15 +52,15 @@ function Settings() {
 
   useEffect(() => {
     (async () => {
-      const [storedToken, storedChannel, storedReviewers] = await Promise.all([
+      const [storedToken, storedChannel, storedDevelopers] = await Promise.all([
         slackToken.getValue(),
         defaultChannel.getValue(),
-        defaultReviewers.getValue(),
+        developersSetting.getValue(),
       ]);
       setToken(storedToken);
       setSavedToken(storedToken);
       setSelectedChannel(storedChannel);
-      setReviewers(storedReviewers);
+      setDevelopers(storedDevelopers);
       if (storedToken) connect(storedToken);
     })();
   }, []);
@@ -80,28 +80,28 @@ function Settings() {
     await defaultChannel.setValue(ref);
   };
 
-  const saveDefaultReviewers = async (next: MemberRef[]) => {
-    setReviewers(next);
-    await defaultReviewers.setValue(next);
+  const saveDevelopers = async (next: MemberRef[]) => {
+    setDevelopers(next);
+    await developersSetting.setValue(next);
   };
 
-  const addReviewer = (member: SlackMember) => {
-    saveDefaultReviewers([...reviewers, { id: member.id, name: member.realName }]);
+  const addDeveloper = (member: SlackMember) => {
+    saveDevelopers([...developers, { id: member.id, name: member.realName }]);
     setQuery('');
   };
 
   const suggestions = query.trim()
-    ? members.filter((m) => !reviewers.some((r) => r.id === m.id) && matchesMember(m, query.trim())).slice(0, MAX_SUGGESTIONS)
+    ? members.filter((m) => !developers.some((d) => d.id === m.id) && matchesMember(m, query.trim())).slice(0, MAX_SUGGESTIONS)
     : [];
 
   const disconnect = async () => {
-    await Promise.all([slackToken.removeValue(), defaultChannel.removeValue(), defaultReviewers.removeValue()]);
+    await Promise.all([slackToken.removeValue(), defaultChannel.removeValue(), developersSetting.removeValue()]);
     setToken('');
     setSavedToken('');
     setChannels([]);
     setSelectedChannel(null);
     setMembers([]);
-    setReviewers([]);
+    setDevelopers([]);
     setQuery('');
     setStatus({ type: 'idle' });
   };
@@ -185,20 +185,22 @@ function Settings() {
       </section>
 
       <section>
-        <h2>4. Default Reviewers (optional)</h2>
-        <p class="hint">Preselected as Reviewers on every Review Request. You can still remove them before sending.</p>
-        {reviewers.length > 0 && (
+        <h2>4. Developers</h2>
+        <p class="hint">
+          Offered as Reviewers on every Review Request. Nobody is preselected: you pick who should review each time.
+        </p>
+        {developers.length > 0 && (
           <ul class="chips">
-            {reviewers.map((r) => {
-              const avatar = members.find((m) => m.id === r.id)?.avatar;
+            {developers.map((d) => {
+              const avatar = members.find((m) => m.id === d.id)?.avatar;
               return (
-                <li key={r.id} class="chip">
+                <li key={d.id} class="chip">
                   {avatar && <img src={avatar} alt="" />}
-                  {r.name}
+                  {d.name}
                   <button
                     type="button"
-                    aria-label={`Remove ${r.name}`}
-                    onClick={() => saveDefaultReviewers(reviewers.filter((x) => x.id !== r.id))}
+                    aria-label={`Remove ${d.name}`}
+                    onClick={() => saveDevelopers(developers.filter((x) => x.id !== d.id))}
                   >
                     ×
                   </button>
@@ -217,7 +219,7 @@ function Settings() {
             onKeyDown={(e) => {
               if (e.key !== 'Enter') return;
               e.preventDefault();
-              if (suggestions[0]) addReviewer(suggestions[0]);
+              if (suggestions[0]) addDeveloper(suggestions[0]);
             }}
           />
         </div>
@@ -225,7 +227,7 @@ function Settings() {
           <ul class="suggestions" role="listbox">
             {suggestions.map((m) => (
               <li key={m.id}>
-                <button type="button" onClick={() => addReviewer(m)}>
+                <button type="button" onClick={() => addDeveloper(m)}>
                   {m.avatar && <img src={m.avatar} alt="" />}
                   <span>{m.realName}</span>
                   {m.displayName && m.displayName !== m.realName && <span class="hint">@{m.displayName}</span>}

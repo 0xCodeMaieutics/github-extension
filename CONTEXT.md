@@ -28,6 +28,6 @@ _Avoid_: Target, recipient
 The Slack channel the user sets in the extension's settings to be preselected as the Destination. Review Requests themselves are never remembered.
 _Avoid_: Last channel, recent channel
 
-**Default Reviewers**:
-The Reviewers the user sets in the extension's settings to be preselected on every Review Request. They can still be removed before sending.
-_Avoid_: Saved reviewers, favourite reviewers
+**Developers**:
+The Slack workspace members the user sets in the extension's settings as the options offered on every Review Request. None is preselected: the user clicks the Developers who should be Reviewers each time, and only Developers can be picked.
+_Avoid_: Default reviewers, saved reviewers, favourite reviewers

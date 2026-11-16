@@ -11,7 +11,7 @@ export interface SendResult {
 export interface Requests {
   getSetup: {
     request: {};
-    response: { configured: boolean; defaultChannel: ChannelRef | null; defaultReviewers: MemberRef[] };
+    response: { configured: boolean; defaultChannel: ChannelRef | null; developers: MemberRef[] };
   };
   listChannels: { request: {}; response: SlackChannel[] };
   listMembers: { request: {}; response: SlackMember[] };

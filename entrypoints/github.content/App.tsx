@@ -3,17 +3,15 @@ import { SlackIcon } from '@/components/SlackIcon';
 import { request, type SendResult } from '@/lib/messaging';
 import { readPullRequest, type PullRequest } from '@/lib/pull-request';
 import { formatReviewRequest, type Destination } from '@/lib/review-request';
-import { matchesMember, type SlackChannel, type SlackMember } from '@/lib/slack';
+import type { SlackChannel, SlackMember } from '@/lib/slack';
 
 type Load =
   | { status: 'loading' }
   | { status: 'unconfigured' }
   | { status: 'error'; error: string }
-  | { status: 'ready'; channels: SlackChannel[]; members: SlackMember[]; defaultChannelId: string | null };
+  | { status: 'ready'; channels: SlackChannel[]; developers: SlackMember[]; defaultChannelId: string | null };
 
 type Send = { status: 'idle' } | { status: 'sending' } | { status: 'sent'; result: SendResult } | { status: 'error'; error: string };
-
-const MAX_SUGGESTIONS = 8;
 
 /** Slack mrkdwn shown as plain text, with mentions and links resolved to names. */
 function toPreview(text: string, members: SlackMember[]): string {
@@ -69,7 +67,6 @@ function Panel({ anchor, floating, onClose }: { anchor: HTMLElement | null; floa
   const [destinationType, setDestinationType] = useState<Destination['type']>('channel');
   const [channelId, setChannelId] = useState('');
   const [reviewerIds, setReviewerIds] = useState<string[]>([]);
-  const [query, setQuery] = useState('');
   const [note, setNote] = useState('');
   const [send, setSend] = useState<Send>({ status: 'idle' });
 
@@ -83,8 +80,8 @@ function Panel({ anchor, floating, onClose }: { anchor: HTMLElement | null; floa
         if (cancelled) return;
         const defaultChannelId = channels.some((c) => c.id === setup.defaultChannel?.id) ? setup.defaultChannel!.id : null;
         setChannelId(defaultChannelId ?? '');
-        setReviewerIds(setup.defaultReviewers.map((r) => r.id).filter((id) => members.some((m) => m.id === id)));
-        setLoad({ status: 'ready', channels, members, defaultChannelId });
+        const developers = setup.developers.flatMap((d) => members.find((m) => m.id === d.id) ?? []);
+        setLoad({ status: 'ready', channels, developers, defaultChannelId });
       } catch (error) {
         if (!cancelled) setLoad({ status: 'error', error: String((error as Error).message ?? error) });
       }
@@ -101,21 +98,15 @@ function Panel({ anchor, floating, onClose }: { anchor: HTMLElement | null; floa
     return floating ? { right, bottom: `${window.innerHeight - rect.top + 8}px` } : { right, top: `${rect.bottom + 8}px` };
   }, [anchor, floating]);
 
-  const members = load.status === 'ready' ? load.members : [];
-  const reviewers = reviewerIds.map((id) => members.find((m) => m.id === id)!).filter(Boolean);
-  const suggestions = query.trim()
-    ? members.filter((m) => !reviewerIds.includes(m.id) && matchesMember(m, query.trim())).slice(0, MAX_SUGGESTIONS)
-    : [];
+  const developers = load.status === 'ready' ? load.developers : [];
 
   const destination: Destination | null =
     destinationType === 'direct' ? { type: 'direct' } : channelId ? { type: 'channel', channelId } : null;
   const reviewRequest = pullRequest && destination ? { pullRequest, destination, reviewerIds, note } : null;
   const canSend = reviewRequest !== null && reviewerIds.length > 0 && send.status !== 'sending';
 
-  const addReviewer = (id: string) => {
-    setReviewerIds([...reviewerIds, id]);
-    setQuery('');
-  };
+  const toggleReviewer = (id: string) =>
+    setReviewerIds(reviewerIds.includes(id) ? reviewerIds.filter((x) => x !== id) : [...reviewerIds, id]);
 
   const submit = async () => {
     if (!reviewRequest || !canSend) return;
@@ -202,46 +193,36 @@ function Panel({ anchor, floating, onClose }: { anchor: HTMLElement | null; floa
 
           <div class="field">
             <span class="field__label">Reviewers</span>
-            {reviewers.length > 0 && (
-              <ul class="chips">
-                {reviewers.map((r) => (
-                  <li key={r.id} class="chip">
-                    {r.avatar && <img src={r.avatar} alt="" />}
-                    {r.realName}
-                    <button
-                      type="button"
-                      aria-label={`Remove ${r.realName}`}
-                      onClick={() => setReviewerIds(reviewerIds.filter((id) => id !== r.id))}
-                    >
-                      ×
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-            <input
-              type="search"
-              placeholder="Search Slack members…"
-              value={query}
-              autoFocus
-              onInput={(e) => setQuery(e.currentTarget.value)}
-              onKeyDown={(e) => {
-                if (e.key !== 'Enter') return;
-                e.preventDefault();
-                if (suggestions[0]) addReviewer(suggestions[0].id);
-              }}
-            />
-            {suggestions.length > 0 && (
-              <ul class="suggestions" role="listbox">
-                {suggestions.map((m) => (
-                  <li key={m.id}>
-                    <button type="button" onClick={() => addReviewer(m.id)}>
-                      {m.avatar && <img src={m.avatar} alt="" />}
-                      <span>{m.realName}</span>
-                      {m.displayName && m.displayName !== m.realName && <span class="muted">@{m.displayName}</span>}
-                    </button>
-                  </li>
-                ))}
+            {developers.length === 0 ? (
+              <div class="notice">
+                <p>Add Developers in the extension settings to choose Reviewers from them.</p>
+                <button type="button" class="btn" onClick={() => request('openSettings')}>
+                  Open settings
+                </button>
+              </div>
+            ) : (
+              <ul class="developers" aria-label="Developers">
+                {developers.map((m) => {
+                  const selected = reviewerIds.includes(m.id);
+                  return (
+                    <li key={m.id}>
+                      <button
+                        type="button"
+                        role="checkbox"
+                        aria-checked={selected}
+                        class={selected ? 'developer is-selected' : 'developer'}
+                        onClick={() => toggleReviewer(m.id)}
+                      >
+                        <span class="developer__check" aria-hidden="true">
+                          {selected ? '✓' : ''}
+                        </span>
+                        {m.avatar && <img src={m.avatar} alt="" />}
+                        <span>{m.realName}</span>
+                        {m.displayName && m.displayName !== m.realName && <span class="muted">@{m.displayName}</span>}
+                      </button>
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </div>
@@ -254,13 +235,13 @@ function Panel({ anchor, floating, onClose }: { anchor: HTMLElement | null; floa
           {reviewRequest && reviewerIds.length > 0 && (
             <div class="field">
               <span class="field__label">Preview</span>
-              <pre class="preview">{toPreview(formatReviewRequest(reviewRequest), members)}</pre>
+              <pre class="preview">{toPreview(formatReviewRequest(reviewRequest), developers)}</pre>
             </div>
           )}
 
           {send.status === 'sent' && (
             <p class={send.result.failures.length ? 'notice notice--error' : 'notice notice--success'}>
-              {describeResult(send.result, destinationType, members)}
+              {describeResult(send.result, destinationType, developers)}
             </p>
           )}
           {send.status === 'error' && <p class="notice notice--error">{send.error}</p>}

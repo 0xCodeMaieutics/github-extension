@@ -17,4 +17,12 @@ export const defaultChannel = storage.defineItem<ChannelRef | null>('local:defau
   fallback: null,
 });
 
-export const defaultReviewers = storage.defineItem<MemberRef[]>('local:defaultReviewers', { fallback: [] });
+export const developers = storage.defineItem<MemberRef[]>('local:developers', { fallback: [] });
+
+/** Carries over the members saved as "Default Reviewers" before they became Developers. */
+export async function migrateDefaultReviewers(): Promise<void> {
+  const legacy = await storage.getItem<MemberRef[]>('local:defaultReviewers');
+  if (!legacy) return;
+  if ((await developers.getValue()).length === 0) await developers.setValue(legacy);
+  await storage.removeItem('local:defaultReviewers');
+}

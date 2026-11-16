@@ -2,7 +2,7 @@ import { browser } from 'wxt/browser';
 import { defineBackground } from 'wxt/utils/define-background';
 import type { Envelope, RequestMessage, SendResult } from '@/lib/messaging';
 import { formatReviewRequest, type ReviewRequest } from '@/lib/review-request';
-import { defaultChannel, defaultReviewers, slackToken } from '@/lib/settings';
+import { defaultChannel, developers, migrateDefaultReviewers, slackToken } from '@/lib/settings';
 import { listChannels, listMembers, openDirectMessage, postMessage } from '@/lib/slack';
 
 async function sendReviewRequest(token: string, reviewRequest: ReviewRequest): Promise<SendResult> {
@@ -34,7 +34,7 @@ async function handle(message: RequestMessage): Promise<unknown> {
       return {
         configured: Boolean(await slackToken.getValue()),
         defaultChannel: await defaultChannel.getValue(),
-        defaultReviewers: await defaultReviewers.getValue(),
+        developers: await developers.getValue(),
       };
     case 'listChannels':
       return listChannels(await slackToken.getValue());
@@ -50,6 +50,7 @@ async function handle(message: RequestMessage): Promise<unknown> {
 
 export default defineBackground(() => {
   browser.action.onClicked.addListener(() => browser.runtime.openOptionsPage());
+  browser.runtime.onInstalled.addListener(() => migrateDefaultReviewers());
 
   browser.runtime.onMessage.addListener((message: RequestMessage, sender, sendResponse) => {
     if (sender.id !== browser.runtime.id) return;
