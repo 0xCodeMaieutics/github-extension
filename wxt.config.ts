@@ -4,10 +4,11 @@ import { defineConfig } from 'wxt';
 export default defineConfig({
   vite: () => ({ plugins: [preact()] }),
   manifest: {
-    name: 'GitHub → Slack Review Requests',
-    description: 'Request a pull request review from colleagues on Slack, straight from GitHub.',
+    name: 'Github Gio',
+    description:
+      'Open GitHub pull request files in your editor or T3 Code, and request reviews from colleagues on Slack.',
     permissions: ['storage'],
-    host_permissions: ['https://slack.com/*'],
-    action: { default_title: 'Slack review request settings' },
+    host_permissions: ['https://github.com/*', 'https://slack.com/*'],
+    action: { default_title: 'Github Gio settings' },
   },
 });

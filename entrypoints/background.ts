@@ -43,7 +43,7 @@ async function handle(message: RequestMessage): Promise<unknown> {
     case 'sendReviewRequest':
       return sendReviewRequest(await slackToken.getValue(), message.reviewRequest);
     case 'openSettings':
-      await browser.runtime.openOptionsPage();
+      await browser.tabs.create({ url: browser.runtime.getURL('/options.html#slack') });
       return null;
   }
 }
