@@ -192,49 +192,23 @@ button:focus-visible {
   outline-offset: -1px;
 }
 
-.chips,
-.suggestions {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-.chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 4px 2px 2px;
-  font-size: 12px;
-  border-radius: 12px;
-  background: var(--bgColor-accent-muted, #ddf4ff);
-}
-
-.chip button {
-  cursor: pointer;
-  background: none;
-  border: 0;
-  padding: 0 4px;
-}
-
 img {
   width: 20px;
   height: 20px;
   border-radius: 4px;
 }
 
-.suggestions {
+.developers {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 240px;
+  overflow: auto;
   border: 1px solid var(--borderColor-default, #d1d9e0);
   border-radius: 6px;
-  overflow: hidden;
 }
 
-.suggestions button {
+.developer {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -246,9 +220,31 @@ img {
   border: 0;
 }
 
-.suggestions button:hover,
-.suggestions button:focus-visible {
+.developer:hover,
+.developer:focus-visible {
   background: var(--control-transparent-bgColor-hover, #818b981a);
+}
+
+.developer.is-selected {
+  background: var(--bgColor-accent-muted, #ddf4ff);
+}
+
+.developer__check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  font-size: 11px;
+  color: var(--fgColor-onEmphasis, #ffffff);
+  border: 1px solid var(--borderColor-default, #d1d9e0);
+  border-radius: 4px;
+}
+
+.developer.is-selected .developer__check {
+  background: var(--bgColor-accent-emphasis, #0969da);
+  border-color: var(--bgColor-accent-emphasis, #0969da);
 }
 
 .preview {

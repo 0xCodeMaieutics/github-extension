@@ -19,7 +19,7 @@ See [CONTEXT.md](./CONTEXT.md) for the project's vocabulary.
 
 3. **Create the Slack app.** Go to [api.slack.com/apps](https://api.slack.com/apps?new_app=1), choose *From a manifest*, pick your workspace and paste [`slack-app-manifest.json`](./slack-app-manifest.json). Under *Basic Information → Display Information*, upload [`assets/slack-app-icon.png`](./assets/slack-app-icon.png) as the app icon. Install the app, then copy the *User OAuth Token* (`xoxp-…`) from *OAuth & Permissions*.
 
-4. **Connect the extension.** Click the extension's toolbar icon to open its settings. Paste the token, click *Save & test*, and optionally choose a Default Channel and Default Reviewers.
+4. **Connect the extension.** Click the extension's toolbar icon to open its settings. Paste the token, click *Save & test*, and add the Developers you request reviews from, and optionally choose a Default Channel.
 
 The token is stored with `chrome.storage.local` in this browser profile only. Only the background worker reads it and sends it to slack.com, so GitHub's page never sees it. The extension keeps no history of the Review Requests you send.
 
@@ -30,7 +30,7 @@ The manifest requests these user scopes:
 | Scope | Used for |
 | --- | --- |
 | `chat:write` | Posting the Review Request as you |
-| `users:read` | Searching Slack members to pick Reviewers |
+| `users:read` | Searching Slack members to add as Developers |
 | `channels:read`, `groups:read` | Listing the public and private channels you belong to |
 | `im:write` | Opening a direct message with each Reviewer |
 
