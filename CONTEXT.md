@@ -1,4 +1,4 @@
-# Github Gio
+# Github Extension
 
 A Chromium browser extension for working on GitHub.com pull requests. It has two features, each with its own tab on the options page:
 

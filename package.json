@@ -1,5 +1,5 @@
 {
-  "name": "github-gio",
+  "name": "github-extension",
   "version": "1.0.0",
   "description": "Chromium extension that opens GitHub pull request files locally and sends review requests to Slack.",
   "scripts": {
