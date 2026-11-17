@@ -11,7 +11,13 @@ A Chromium extension (Chrome, Edge, Brave, Arc) for GitHub.com pull requests wit
   <img src="docs/screenshots/file-opener.png" alt="A file header in a pull request diff with VS Code and T3 Code icons beside the file name, and a floating VS Code, T3 Code and copy toolbar next to two selected lines of code">
 </picture>
 
-An editor icon on every file header of a pull request's **Files changed** view opens that file in desktop VS Code or Zed at the first changed line. A T3 Code icon (and a floating one beside a code selection) starts a T3 Code chat that references the file or the selected lines. Cursor Bugbot comments get a **Copy for AI** button.
+**Problem:** GitHub's diff view only shows a few lines around each change. For a proper review you want the code in your IDE, with go-to-definition, the rest of the file and a terminal. Getting there is slow: switch to the editor, open the right repository, search for the file, then scroll to the line you were reading. Asking an AI agent about a snippet is just as slow, because you copy the code, the path and the line numbers into a chat by hand.
+
+**Solution:** One click from the diff.
+
+- Click the editor icon on a file header and the file opens in VS Code or Zed at its first changed line.
+- Select lines in the diff and a small toolbar appears beside them. It opens the file in your editor at those lines, starts a T3 Code chat that references them, or copies them as a ready-to-paste prompt with the PR, file path and line numbers.
+- Cursor Bugbot comments get a **Copy for AI** button, so you can hand a finding to an agent in one step.
 
 ### Slack: request a review without leaving the PR
 
@@ -22,7 +28,13 @@ An editor icon on every file header of a pull request's **Files changed** view o
 </picture>
 </p>
 
-A **Request PR review** button with a Slack icon floats on open pull requests. It sends a Review Request to Slack, either as a message in a channel that mentions the Reviewers or as a separate direct message to each Reviewer. Messages are posted as you, and the dialog previews them before you send.
+**Problem:** Opening a PR is only half the job. Someone still has to review it, so you copy the PR link, switch to Slack, find the review channel or each teammate's DMs, type out the title and a note, and @-mention people one by one. Asking three people this way can take a few minutes, and the message looks different every time.
+
+**Solution:** A **Request PR review** button with a Slack icon floats on open pull requests.
+
+- Click it, tick the Reviewers, add an optional note and send.
+- The extension posts the Review Request to Slack as you. It goes either as one channel message that mentions every Reviewer, or as a separate direct message to each one.
+- The PR title and link are filled in for you, and the dialog previews the message before you send it.
 
 Click the toolbar icon to open the settings. Each feature has its own tab.
 
