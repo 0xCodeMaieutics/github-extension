@@ -49,15 +49,12 @@ Open `chrome://extensions`, turn on *Developer mode*, click *Load unpacked* and 
 - Deleted files get no icon. Renamed files open at their new path.
 - The extension never switches branches: the file opens from whatever is checked out locally, so its content may differ from the PR until you check out the PR branch yourself.
 
-<details>
-<summary>File opener settings</summary>
+The *File opener* settings tab:
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/settings-file-opener-dark.png">
   <img src="docs/screenshots/settings-file-opener.png" alt="The File opener settings tab: a repository mapped to a local folder, a form to add a mapping, and a VS Code / Zed choice" width="640">
 </picture>
-
-</details>
 
 File paths are verified against GitHub's `diff-<sha256(path)>` anchor ids, which both the classic and the newer React diff UI use.
 
@@ -66,15 +63,12 @@ File paths are verified against GitHub's `diff-<sha256(path)>` anchor ids, which
 1. **Create the Slack app.** Go to [api.slack.com/apps](https://api.slack.com/apps?new_app=1), choose *From a manifest*, pick your workspace and paste [`slack-app-manifest.json`](./slack-app-manifest.json). Under *Basic Information → Display Information*, upload [`assets/slack-app-icon.png`](./assets/slack-app-icon.png) as the app icon. Install the app, then copy the *User OAuth Token* (`xoxp-…`) from *OAuth & Permissions*.
 2. **Connect the extension.** On the *Slack* tab of the settings, paste the token, click *Save & test*, add the Developers you request reviews from, and optionally choose a Default Channel.
 
-<details>
-<summary>Slack settings</summary>
+The *Slack* settings tab, connected:
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/settings-slack-dark.png">
   <img src="docs/screenshots/settings-slack.png" alt="The Slack settings tab: a saved token connected to a workspace, #code-review as the Default Channel, and four Developers" width="640">
 </picture>
-
-</details>
 
 The token is stored with `chrome.storage.local` in this browser profile only. Only the background worker reads it and sends it to slack.com, so GitHub's page never sees it. The extension keeps no history of the Review Requests you send.
 
