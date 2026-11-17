@@ -19,6 +19,11 @@ A Chromium extension (Chrome, Edge, Brave, Arc) for GitHub.com pull requests wit
 - Select lines in the diff and a small toolbar appears beside them. It opens the file in your editor at those lines, starts a T3 Code chat that references them, or copies them as a ready-to-paste prompt with the PR, file path and line numbers.
 - Cursor Bugbot comments get a **Copy for AI** button, so you can hand a finding to an agent in one step.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/bugbot-dark.png">
+  <img src="docs/screenshots/bugbot.png" alt="A Cursor Bugbot issue comment on a pull request with a Copy for AI button after its Fix in Cursor and Fix in Web links" width="640">
+</picture>
+
 ### Slack: request a review without leaving the PR
 
 <p align="center">

@@ -34,6 +34,18 @@ const slack = {
   'conversations.open': { ok: true, channel: { id: 'D01' } },
 };
 
+// GitHub's CSP blocks cursor.com images (real comments go through its camo proxy), so inline them.
+const dataUrl = async (url) => `data:image/png;base64,${Buffer.from(await (await fetch(url)).arrayBuffer()).toString('base64')}`;
+const fixImages = {};
+for (const slug of ['fix-in-cursor', 'fix-in-web']) for (const s of ['light', 'dark']) fixImages[`${slug}-${s}`] = await dataUrl(`https://cursor.com/assets/images/${slug}-${s}.png`);
+const bugbotAvatar = await dataUrl('https://avatars.githubusercontent.com/in/1210556?s=80');
+const fixLink = (label, slug, width, href) => `<a href="${href}"><picture><source media="(prefers-color-scheme: dark)" srcset="${fixImages[`${slug}-dark`]}"><source media="(prefers-color-scheme: light)" srcset="${fixImages[`${slug}-light`]}"><img alt="${label}" width="${width}" height="28" src="${fixImages[`${slug}-dark`]}"></picture></a>`;
+const bugbotComment = `<h3>Renamed files open at the old path</h3>
+<p><strong>Medium Severity</strong></p>
+<p><code>resolveHeadPath</code> reads the first path in a renamed file's header, which is the path before the rename. Clicking the editor icon on a renamed file then opens a file that no longer exists in the local clone.</p>
+<div>${fixLink('Fix in Cursor', 'fix-in-cursor', 115, 'https://cursor.com/open')}&nbsp;${fixLink('Fix in Web', 'fix-in-web', 99, 'https://cursor.com/agents')}</div>
+<p><sup>Reviewed by <a href="https://cursor.com/bugbot">Cursor Bugbot</a> for commit 1a2b3c4. Configure <a href="https://www.cursor.com/dashboard/bugbot">here</a>.</sup></p>`;
+
 for (const scheme of ['light', 'dark']) {
   const ctx = await chromium.launchPersistentContext('', {
     channel: 'chromium', headless: true, viewport: { width: 1280, height: 860 }, deviceScaleFactor: 2, colorScheme: scheme,
@@ -105,7 +117,27 @@ for (const scheme of ['light', 'dark']) {
   // Crop from the dialog to the floating button, leaving out the PR's (merged) state label.
   await page.screenshot({ path: `${OUT}/slack-dialog${suffix}.png`, clip: { x: d.x - 40, y: d.y - 24, width: 1280 - (d.x - 40), height: 860 - (d.y - 24) } });
 
-  // 3. Settings tabs.
+  // 3. Bugbot: PR #4 has no Bugbot comments, so its description is restyled as a fictional Bugbot issue comment.
+  await page.goto(PR, { waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('.timeline-comment .markdown-body');
+  await page.evaluate(([body, avatarSrc]) => {
+    const comment = document.querySelector('.timeline-comment');
+    comment.querySelector('.markdown-body').innerHTML = body;
+    comment.querySelectorAll('.author').forEach(e => { e.textContent = 'cursor'; });
+    comment.querySelectorAll('.Label, .timeline-comment-label').forEach(e => e.remove());
+    comment.closest('.TimelineItem')?.querySelectorAll('img.avatar').forEach(e => { e.removeAttribute('srcset'); e.src = avatarSrc; });
+  }, [bugbotComment, bugbotAvatar]);
+  await page.waitForSelector('[data-gvfo-bugbot-copy]', { timeout: 15000 });
+  await page.waitForFunction(() => [...document.querySelectorAll('.TimelineItem img')].every(i => i.complete));
+  const item = page.locator('.timeline-comment').first().locator('xpath=ancestor::*[contains(@class, "TimelineItem")][1]');
+  await page.locator('[data-gvfo-bugbot-copy]').evaluate(e => Object.assign(e.style, { outline: '2px solid #fb8f44', outlineOffset: '3px', borderRadius: '6px' }));
+  await item.evaluate(e => window.scrollBy(0, e.getBoundingClientRect().top - 80));
+  await page.waitForTimeout(300);
+  const c = await page.locator('.timeline-comment').first().boundingBox();
+  const left = await item.evaluate(e => Math.min(...[...e.querySelectorAll('img.avatar')].map(i => i.getBoundingClientRect().left), e.getBoundingClientRect().left));
+  await page.screenshot({ path: `${OUT}/bugbot${suffix}.png`, clip: { x: left - 12, y: c.y - 12, width: c.x + c.width + 12 - (left - 12), height: c.height + 24 } });
+
+  // 4. Settings tabs.
   for (const tab of ['file-opener', 'slack']) {
     await page.goto(`chrome-extension://${extId}/options.html#${tab}`);
     await page.waitForTimeout(1500);
