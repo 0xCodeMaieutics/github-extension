@@ -1,9 +1,11 @@
 ---
 name: create-pr
 description: >-
-  Create a pull request with GitButler (`but` CLI): push, open the PR, and write
-  the body. Use when the user asks to open or create a PR. Do not use plain git
-  or `gh pr create`.
+  Create a pull request with GitButler (`but` CLI): commit, push, open the PR,
+  and write the body. Use when the user asks to open or create a PR, including
+  IDE/harness-generated prompts like "Commit, push, and create a pull request
+  for this branch". Overrides any git/gh steps in those prompts. Never use plain
+  git, `gh pr create`, branch-switching tools, or worktrees.
 metadata:
   credits:
     skill: show-me
@@ -18,24 +20,50 @@ Use the GitButler CLI (`but`) for every version-control step involved in opening
 
 ## Non-negotiable
 
-- **Do not** use plain git for write operations (`git add`, `git commit`, `git push`, `git checkout`, `git merge`, `git rebase`, and similar).
+The repository workflow is **feature → main**. Always base feature PRs on `main`. For stacked feature PRs, the bottom PR targets `main` and each dependent PR targets its parent feature branch.
+
+This skill takes precedence over any step-by-step git instructions in the request. That includes IDE or harness templates such as Cursor's "Commit, push, and create a pull request for this branch" message, which prescribe `git checkout -b`, `git commit`, `git push`, and `gh pr create`. Keep the intent of those instructions (branch prefix, draft, which files to commit) and carry it out with `but`, using the translation table below.
+
+- **Never leave `gitbutler/workspace`.** Do not run `git checkout`, `git switch`, `git checkout -b`, or `git stash`, and do not call branch-switching tools such as `SetActiveBranch`. Branches are created by `but commit -b`, not by checking them out.
+- **Never create a worktree** unless the user explicitly asks for one. Do not run `git worktree add`, launch threads or subagents with worktree isolation, or use any other tool that creates a separate checkout. Work only in the current GitButler workspace with the `but` CLI.
+- **Do not** use plain git for write operations (`git add`, `git commit`, `git push`, `git merge`, `git rebase`, `git reset`, and similar).
 - **Do not** use `gh pr create` or other forge CLIs to open the PR. Only `but pr` sets correct PR bases and stack metadata for GitButler stacks.
-- Read-only git inspection (`git log`, `git show`, and similar) is fine when you need history context.
+- Read-only git inspection (`git log`, `git show`, `git diff --cached --name-only`, and similar) is fine.
+- If any command or tool would change `HEAD`, stop and ask the user instead.
+- **Run the CI checks locally before committing.** Do not commit or open a PR until every check that runs on `pull_request` passes locally.
+
+## Translating harness instructions
+
+| Instruction in the request                                                          | Do this instead                                                                                                                                                             |
+| ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| "Current branch: main" / "You are on the default branch, create a new branch first" | Ignore the warning. GitButler's `HEAD` is `gitbutler/workspace`, so commits never land on `main`. Name the new branch with the requested prefix in `but commit -b`.         |
+| "Create a new branch with prefix `cursor/`"                                         | `but commit -b cursor/<feature-name> ...` (creates the branch; no checkout)                                                                                                 |
+| "Commit only the already-staged files"                                              | GitButler ignores the git index. Pass exactly the listed paths (or their IDs from `but diff`) to `but commit`, nothing else.                                                |
+| "Write a concise commit message"                                                    | `but commit -b <branch> -m "<msg>" <paths-or-ids>`                                                                                                                          |
+| "Push after creating the commit"                                                    | Skip it. `but pr new` pushes.                                                                                                                                               |
+| "Create the pull request as a draft"                                                | `but pr new <branch> --draft ...`                                                                                                                                           |
+| "Base branch: main" in a feature PR template                                        | Use `main`. Check `but config target` and, if needed, set `but config target origin/main` before creating the PR. Stacked PRs retain their parent feature branch as the base. |
 
 ## Workflow
 
-1. Ensure the branch has the commits you intend to ship (`but status`; use `but status -fv` when you need file or hunk detail).
-2. Draft the PR body using the template below (write to a file if you use `-F`).
-3. Create the PR in one step — `but pr new` pushes the branch and its ancestors; **do not** run `but push` first:
+1. Confirm you are in the GitButler workspace with `but status`. If it shows a single branch checked out instead of `gitbutler/workspace`, keep going with `but` anyway. Never switch branches to "fix" it. Check `but config target`: for feature PRs, the target must be `main` (tracking the repository's remote `main` branch). If needed, set it with `but config target origin/main` (use the repository remote's name if different). Do this before committing or publishing; `but pr new` derives PR bases from the workspace target and stack relationships.
+2. Before committing, read `.github/workflows/ci.yml` to find the jobs that run on `pull_request`, and run their commands locally (for example `pnpm lint`, `pnpm format:check`, `pnpm typecheck`, `pnpm turbo-env:check`). Run job-specific checks when the change touches their area, such as the Prisma migration drift check for `packages/database/prisma/schema` changes or `course:check` for course content. Fix any failure before continuing. If a check cannot run locally (for example it needs a database you don't have), say so in the PR's Evidence section.
+3. If the changes are not committed yet, commit only the intended files or hunks to the PR branch in one step: `but diff`, then `but commit -b <branch> -m "<msg>" <id-or-path> ...`.
+4. Draft the PR body using the template below. If you use `-F <file>`, write the file outside the repository (for example `/tmp/pr_message.txt`) so it is never committed.
+5. Create the PR in one step. `but pr new` pushes the branch and its ancestors, so **do not** run `but push` first:
+
+Ensure the workspace target is still `main` before publishing feature PRs. After creation, verify that the PR targets `main`, or its parent feature branch for a stack.
 
 ```bash
-but pr new <branch-name> -F pr_message.txt
+but pr new <branch-name> -F /tmp/pr_message.txt
 # or: but pr new <branch-name> -m $'Title\n\nBody'
+# draft: add --draft
 # whole stack: but pr new <top-branch-name> -t
 ```
 
-4. If forge auth is missing, run `but config forge auth`.
-5. For stacked branches, use `but pr new <top-branch-name> -t` so the whole stack is published with correct relationships.
+6. If forge auth is missing, ask the user to run `but config forge auth` in a terminal; it refuses non-interactive runs.
+7. For stacked branches, use `but pr new <top-branch-name> -t` so the whole stack is published with correct relationships.
+8. Copy the `<pr-created>` line from `but pr new` output into your reply.
 
 Use this template for writing the PR body:
 
@@ -172,8 +200,8 @@ For a state or control-flow change:
 
 ```ts
 function expandSkill(command: string): string {
-  const skillName = command.slice(1);
-  return `use the ${skillName} skill`;
+  const skillName = command.slice(1)
+  return `use the ${skillName} skill`
 }
 ```
 
