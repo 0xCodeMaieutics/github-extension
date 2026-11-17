@@ -8,11 +8,13 @@
     "zip": "wxt zip",
     "compile": "tsc --noEmit",
     "test": "vitest run",
-    "postinstall": "wxt prepare"
+    "postinstall": "wxt prepare",
+    "screenshots": "node scripts/screenshots.mjs"
   },
   "devDependencies": {
     "@preact/preset-vite": "^2.10.6",
     "happy-dom": "^21.0.4",
+    "playwright": "1.57",
     "typescript": "^7.0.2",
     "vitest": "^5.1.0",
     "wxt": "^0.21.5"

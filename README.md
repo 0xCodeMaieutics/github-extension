@@ -2,10 +2,27 @@
 
 # Github Extension
 
-A Chromium extension (Chrome, Edge, Brave, Arc) for GitHub.com pull requests with two features:
+A Chromium extension (Chrome, Edge, Brave, Arc) for GitHub.com pull requests with two features.
 
-- **File opener**: an editor icon on every file header of a pull request's **Files changed** view opens that file in desktop VS Code or Zed at the first changed line. A T3 Code icon (and a floating one beside a code selection) starts a T3 Code chat that references the file or the selected lines. Cursor Bugbot comments get a **Copy for AI** button.
-- **Slack**: a **Request PR review** button with a Slack icon on open pull requests sends a Review Request to Slack, either as a message in a channel that mentions the Reviewers or as a separate direct message to each Reviewer. Messages are posted as you.
+### File opener: jump from a diff to your editor or T3 Code
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/file-opener-dark.png">
+  <img src="docs/screenshots/file-opener.png" alt="A file header in a pull request diff with VS Code and T3 Code icons beside the file name, and a floating VS Code, T3 Code and copy toolbar next to two selected lines of code">
+</picture>
+
+An editor icon on every file header of a pull request's **Files changed** view opens that file in desktop VS Code or Zed at the first changed line. A T3 Code icon (and a floating one beside a code selection) starts a T3 Code chat that references the file or the selected lines. Cursor Bugbot comments get a **Copy for AI** button.
+
+### Slack: request a review without leaving the PR
+
+<p align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/slack-dialog-dark.png">
+  <img src="docs/screenshots/slack-dialog.png" alt="The Request PR review dialog over a GitHub pull request: channel #code-review, two Reviewers ticked, a note, and a preview of the Slack message. The floating Slack button sits in the bottom-right corner" width="560">
+</picture>
+</p>
+
+A **Request PR review** button with a Slack icon floats on open pull requests. It sends a Review Request to Slack, either as a message in a channel that mentions the Reviewers or as a separate direct message to each Reviewer. Messages are posted as you, and the dialog previews them before you send.
 
 Click the toolbar icon to open the settings. Each feature has its own tab.
 
@@ -32,12 +49,32 @@ Open `chrome://extensions`, turn on *Developer mode*, click *Load unpacked* and 
 - Deleted files get no icon. Renamed files open at their new path.
 - The extension never switches branches: the file opens from whatever is checked out locally, so its content may differ from the PR until you check out the PR branch yourself.
 
+<details>
+<summary>File opener settings</summary>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/settings-file-opener-dark.png">
+  <img src="docs/screenshots/settings-file-opener.png" alt="The File opener settings tab: a repository mapped to a local folder, a form to add a mapping, and a VS Code / Zed choice" width="640">
+</picture>
+
+</details>
+
 File paths are verified against GitHub's `diff-<sha256(path)>` anchor ids, which both the classic and the newer React diff UI use.
 
 ## Slack
 
 1. **Create the Slack app.** Go to [api.slack.com/apps](https://api.slack.com/apps?new_app=1), choose *From a manifest*, pick your workspace and paste [`slack-app-manifest.json`](./slack-app-manifest.json). Under *Basic Information → Display Information*, upload [`assets/slack-app-icon.png`](./assets/slack-app-icon.png) as the app icon. Install the app, then copy the *User OAuth Token* (`xoxp-…`) from *OAuth & Permissions*.
 2. **Connect the extension.** On the *Slack* tab of the settings, paste the token, click *Save & test*, add the Developers you request reviews from, and optionally choose a Default Channel.
+
+<details>
+<summary>Slack settings</summary>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/settings-slack-dark.png">
+  <img src="docs/screenshots/settings-slack.png" alt="The Slack settings tab: a saved token connected to a workspace, #code-review as the Default Channel, and four Developers" width="640">
+</picture>
+
+</details>
 
 The token is stored with `chrome.storage.local` in this browser profile only. Only the background worker reads it and sends it to slack.com, so GitHub's page never sees it. The extension keeps no history of the Review Requests you send.
 
@@ -61,6 +98,7 @@ pnpm dev       # launches Chromium with the extension and reloads on change
 pnpm compile   # type-check
 pnpm test      # unit tests (Vitest + happy-dom) for the file opener
 pnpm zip       # package for the Chrome Web Store
+pnpm screenshots  # after pnpm build (and `pnpm exec playwright install chromium` once): regenerate docs/screenshots
 ```
 
 Layout:
@@ -71,3 +109,4 @@ Layout:
 - `entrypoints/background.ts`: Slack API calls and opening the settings.
 - `lib/file-opener/`: GitHub URL parsing, file and path detection, diff anchors, storage, `vscode://` / `zed://` URLs.
 - `lib/`: Slack API client, settings and messaging.
+- `scripts/screenshots.mjs`: loads the built extension in Playwright's Chromium on this repository's PR #4 with a faked Slack API, and captures the README screenshots.
