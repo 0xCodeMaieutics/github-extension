@@ -1,6 +1,6 @@
 <img src="assets/icon.svg" width="64" height="64" alt="">
 
-# Github Gio
+# Github Extension
 
 A Chromium extension (Chrome, Edge, Brave, Arc) for GitHub.com pull requests with two features:
 
