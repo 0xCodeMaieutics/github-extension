@@ -73,6 +73,11 @@ Open `chrome://extensions`, turn on *Developer mode*, click *Load unpacked* and 
 - Select lines in the thread's code snippet to get the floating toolbar. It opens the file at the first selected line, references the lines in T3 Code, or copies them as a prompt.
 - Deleted lines have no place in the current file, so selecting only deleted lines shows no toolbar.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/review-thread-dark.png">
+  <img src="docs/screenshots/review-thread.png" alt="A Cursor Bugbot review thread on the Conversation tab with three highlighted additions: editor and T3 Code icons beside the file name, a floating editor, T3 Code and copy toolbar next to a selected code line, and a Copy for AI button after the Fix in Cursor and Fix in Web links">
+</picture>
+
 The *File opener* settings tab:
 
 <picture>
