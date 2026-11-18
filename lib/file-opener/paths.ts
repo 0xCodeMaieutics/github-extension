@@ -31,10 +31,11 @@ export function joinRepoPath(localRoot: string, repoRelativePath: string): strin
 
 /**
  * Builds `<scheme>://file/<absolute path>:<line>:<column>` (`vscode://` or `zed://`;
- * both accept this shape). Windows paths gain a leading slash (`/C:/...`) as VS Code
- * expects; path segments are percent-encoded so spaces and `#`/`?` survive the URL handler.
+ * both accept this shape), or just the path when `line` is null. Windows paths gain a
+ * leading slash (`/C:/...`) as VS Code expects; path segments are percent-encoded so
+ * spaces and `#`/`?` survive the URL handler.
  */
-export function buildEditorFileUrl(editor: Editor, absolutePath: string, line: number, column = 1): string {
+export function buildEditorFileUrl(editor: Editor, absolutePath: string, line: number | null, column = 1): string {
   const forward = absolutePath.replace(/\\/g, "/")
   const withLeadingSlash = forward.startsWith("/") ? forward : `/${forward}`
   const encoded = withLeadingSlash
@@ -44,6 +45,7 @@ export function buildEditorFileUrl(editor: Editor, absolutePath: string, line: n
       return isDrive ? segment : encodeURIComponent(segment)
     })
     .join("/")
+  if (line === null) return `${EDITORS[editor].scheme}://file${encoded}`
   const safeLine = Number.isInteger(line) && line > 0 ? line : 1
   const safeColumn = Number.isInteger(column) && column > 0 ? column : 1
   return `${EDITORS[editor].scheme}://file${encoded}:${safeLine}:${safeColumn}`

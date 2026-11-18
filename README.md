@@ -17,6 +17,7 @@ A Chromium extension (Chrome, Edge, Brave, Arc) for GitHub.com pull requests wit
 
 - Click the editor icon on a file header and the file opens in VS Code or Zed at its first changed line.
 - Select lines in the diff and a small toolbar appears beside them. It opens the file in your editor at those lines, starts a T3 Code chat that references them, or copies them as a ready-to-paste prompt with the PR, file path and line numbers.
+- Review threads on the Conversation tab work the same way: the file name in the thread header gets the editor and T3 Code icons, which open or reference the whole file, and selecting lines in the thread's code snippet shows the toolbar.
 - Cursor Bugbot comments get a **Copy for AI** button, so you can hand a finding to an agent in one step.
 
 <picture>
@@ -66,6 +67,12 @@ Open `chrome://extensions`, turn on *Developer mode*, click *Load unpacked* and 
 - Deleted files get no icon. Renamed files open at their new path.
 - The extension never switches branches: the file opens from whatever is checked out locally, so its content may differ from the PR until you check out the PR branch yourself.
 
+### Review threads on the Conversation tab
+
+- The file name in a review thread's header gets the editor and T3 Code icons. The editor icon opens the whole file without jumping to a line, and the T3 Code icon references the whole file.
+- Select lines in the thread's code snippet to get the floating toolbar. It opens the file at the first selected line, references the lines in T3 Code, or copies them as a prompt.
+- Deleted lines have no place in the current file, so selecting only deleted lines shows no toolbar.
+
 The *File opener* settings tab:
 
 <picture>
@@ -73,7 +80,7 @@ The *File opener* settings tab:
   <img src="docs/screenshots/settings-file-opener.png" alt="The File opener settings tab: a repository mapped to a local folder, a form to add a mapping, and a VS Code / Zed choice" width="640">
 </picture>
 
-File paths are verified against GitHub's `diff-<sha256(path)>` anchor ids, which both the classic and the newer React diff UI use.
+File paths are verified against GitHub's `diff-<sha256(path)>` anchor ids, which both the classic and the newer React diff UI use. React review threads on the Conversation tab link to the comment instead of that anchor, so there the path comes from the file link in the thread's heading.
 
 ## Slack
 

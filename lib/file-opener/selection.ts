@@ -1,7 +1,9 @@
 import { headLineOf } from "./diff"
 import { findFileContainerOf } from "./files"
+import { findThreadSnippetOf } from "./threads"
 
 export interface CodeSelection {
+  /** A changes-view file container or a review thread snippet. */
   container: HTMLElement
   startLine: number
   endLine: number
@@ -21,16 +23,20 @@ function touchesOnlyEdge(range: Range, row: Element, edge: "start" | "end"): boo
   return slice.toString().trim() === ""
 }
 
+function findCodeContainerOf(node: Node): HTMLElement | null {
+  return findFileContainerOf(node) ?? findThreadSnippetOf(node)
+}
+
 /**
  * Reduces a text selection to a code selection: the inclusive range between the
- * first and last head-side lines it covers inside one file's diff, including
- * lines collapsed between hunks. Returns null for base-only selections and for
- * selections that cross into another file.
+ * first and last head-side lines it covers inside one file's diff or review
+ * thread snippet, including lines collapsed between hunks. Returns null for
+ * base-only selections and for selections that cross into another file.
  */
 export function toCodeSelection(range: Range): CodeSelection | null {
   if (range.collapsed) return null
-  const container = findFileContainerOf(range.startContainer)
-  if (!container || container !== findFileContainerOf(range.endContainer)) return null
+  const container = findCodeContainerOf(range.startContainer)
+  if (!container || container !== findCodeContainerOf(range.endContainer)) return null
   if (splitSideOf(range.startContainer) === "left" && splitSideOf(range.endContainer) === "left") return null
 
   const rows = [...container.querySelectorAll("tr")].filter((row) => range.intersectsNode(row))
