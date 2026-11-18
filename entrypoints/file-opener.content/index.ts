@@ -23,8 +23,18 @@ import {
 import { getRepositoryMapping, setRepositoryMapping } from "@/lib/file-opener/mappings"
 import { buildEditorFileUrl, isAbsoluteLocalPath, joinRepoPath } from "@/lib/file-opener/paths"
 import { buildT3PromptUrl, formatReferencePrompt, readHeadLines, type LineRange } from "@/lib/file-opener/reference"
+import {
+  findThreadLinks,
+  hasCodePath,
+  resolveCodePath,
+  threadFileOf,
+  threadSnippetOf,
+  type ThreadFile,
+} from "@/lib/file-opener/threads"
 
 const pendingContainers = new WeakSet<HTMLElement>()
+const pendingThreadLinks = new WeakSet<HTMLAnchorElement>()
+const threadFiles = new WeakMap<HTMLAnchorElement, ThreadFile | null>()
 const settledStatuses = new WeakMap<HTMLElement, Exclude<FileStatus, "unknown">>()
 
 let editor: Editor = DEFAULT_EDITOR
@@ -49,8 +59,9 @@ async function resolveLocalRoot(pullRequest: PullRequestRef, forceRepair: boolea
   return localRoot
 }
 
-async function openInEditor(headPath: string, line: number, forceRepair: boolean): Promise<void> {
-  const pullRequest = parsePullRequestChangesView(location.href)
+/** `line` is null to open the file without moving to a line. */
+async function openInEditor(headPath: string, line: number | null, forceRepair: boolean): Promise<void> {
+  const pullRequest = parsePullRequestPage(location.href)
   if (!pullRequest) return
 
   const localRoot = await resolveLocalRoot(pullRequest, forceRepair)
@@ -69,7 +80,7 @@ function headerLines(container: HTMLElement): LineRange {
 
 /** `lines` is null for a whole-file reference. */
 function referenceInT3(container: HTMLElement, headPath: string, lines: LineRange | null): void {
-  const pullRequest = parsePullRequestChangesView(location.href)
+  const pullRequest = parsePullRequestPage(location.href)
   if (!pullRequest) return
 
   location.href = buildT3PromptUrl({
@@ -88,8 +99,8 @@ function referencePrompt(
 }
 
 async function copyReferencePrompt(container: HTMLElement, lines: LineRange): Promise<boolean> {
-  const pullRequest = parsePullRequestChangesView(location.href)
-  const headPath = await resolveHeadPath(container)
+  const pullRequest = parsePullRequestPage(location.href)
+  const headPath = await resolveCodePath(container)
   if (!pullRequest || !headPath) return false
   try {
     await navigator.clipboard.writeText(referencePrompt(pullRequest, container, headPath, lines))
@@ -151,10 +162,39 @@ async function injectAffordance(container: HTMLElement): Promise<void> {
   }
 }
 
+/** Header icons beside the file path of a review thread on the conversation tab; they open the whole file. */
+async function injectThreadAffordance(link: HTMLAnchorElement): Promise<void> {
+  if (pendingThreadLinks.has(link)) return
+
+  pendingThreadLinks.add(link)
+  try {
+    await editorLoaded
+    if (!threadFiles.has(link)) threadFiles.set(link, await threadFileOf(link))
+    const file = threadFiles.get(link)
+    if (!file || file.label.nextElementSibling?.matches(AFFORDANCE_SELECTOR)) return
+    const snippet = threadSnippetOf(link)
+    if (snippet && fileStatus(snippet) === "deleted") return
+
+    const { path, label } = file
+    const openButton = createOpenAffordance(path, editor, {
+      onActivate: ({ repair }) => void openInEditor(path, null, repair),
+    })
+    const t3Button = createT3ContextAffordance(path, {
+      onActivate: () => referenceInT3(link, path, null),
+    })
+    label.after(openButton, t3Button)
+  } finally {
+    pendingThreadLinks.delete(link)
+  }
+}
+
 function scan(): void {
   if (!parsePullRequestPage(location.href)) return
   injectBugbotCopyButtons(copyBugbotPrompt)
-  if (!parsePullRequestChangesView(location.href)) return
+  if (!parsePullRequestChangesView(location.href)) {
+    for (const link of findThreadLinks()) void injectThreadAffordance(link)
+    return
+  }
   for (const container of findFileContainers()) void injectAffordance(container)
 }
 
@@ -194,16 +234,16 @@ export default defineContentScript({
     })
 
     installSelectionAffordance({
-      isActive: () => parsePullRequestChangesView(location.href) !== null,
-      isReferenceable: (container) => fileStatus(container) !== "deleted",
+      isActive: () => parsePullRequestPage(location.href) !== null,
+      isReferenceable: (container) => fileStatus(container) !== "deleted" && hasCodePath(container),
       onOpen: ({ container, startLine, endLine }) => {
-        void resolveHeadPath(container).then((headPath) => {
+        void resolveCodePath(container).then((headPath) => {
           if (headPath) referenceInT3(container, headPath, { startLine, endLine })
         })
       },
       editor: () => editor,
       onOpenInEditor: ({ container, startLine }, { repair }) => {
-        void resolveHeadPath(container).then((headPath) => {
+        void resolveCodePath(container).then((headPath) => {
           if (headPath) void openInEditor(headPath, startLine, repair)
         })
       },

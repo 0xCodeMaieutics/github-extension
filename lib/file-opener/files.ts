@@ -26,7 +26,7 @@ export function findFileHeader(container: HTMLElement): HTMLElement | null {
   return container.querySelector<HTMLElement>(HEADER_SELECTOR)
 }
 
-function cleanPath(value: string | null | undefined): string | null {
+export function cleanPath(value: string | null | undefined): string | null {
   const cleaned = value?.replace(INVISIBLE_CHARS, "").trim()
   return cleaned ? cleaned : null
 }
@@ -55,7 +55,7 @@ function headerTextPaths(header: HTMLElement | null): string[] {
   })
 }
 
-async function sha256Hex(text: string): Promise<string> {
+export async function sha256Hex(text: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text))
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("")
 }

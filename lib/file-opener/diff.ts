@@ -6,6 +6,8 @@ export interface HunkRange {
 }
 
 const HUNK_HEADER = /@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/
+const CODE_TEXT_SELECTOR = '.blob-code-inner, [class*="diff-text-inner" i], [class*="diffTextInner" i]'
+const CODE_MARKER_SELECTOR = '[class*="diff-text-marker" i], [class*="diffTextMarker" i]'
 
 export function parseHunkHeader(text: string): HunkRange | null {
   const match = HUNK_HEADER.exec(text)
@@ -21,7 +23,9 @@ export function parseHunkHeader(text: string): HunkRange | null {
 type RowKind = "hunk" | "addition" | "deletion" | "context" | "other"
 
 function lineNumberOf(cell: Element): number | null {
-  const raw = cell.getAttribute("data-line-number") ?? cell.textContent?.trim() ?? ""
+  // Without the attribute, a code cell whose source line is only digits must not read as a line number.
+  const text = cell.querySelector(`${CODE_TEXT_SELECTOR}, ${CODE_MARKER_SELECTOR}`) ? "" : cell.textContent?.trim()
+  const raw = cell.getAttribute("data-line-number") ?? text ?? ""
   return /^\d+$/.test(raw) ? Number(raw) : null
 }
 
@@ -30,8 +34,11 @@ function numberedCells(row: Element): HTMLTableCellElement[] {
 }
 
 function hasCellMatching(row: Element, pattern: RegExp, marker: string): boolean {
-  return [...row.querySelectorAll("td, [data-code-marker]")].some(
-    (cell) => pattern.test(cell.className) || cell.getAttribute("data-code-marker") === marker,
+  return [...row.querySelectorAll(`td, [data-code-marker], ${CODE_MARKER_SELECTOR}`)].some(
+    (cell) =>
+      pattern.test(cell.className) ||
+      cell.getAttribute("data-code-marker") === marker ||
+      (cell.matches(CODE_MARKER_SELECTOR) && cell.textContent?.trim() === marker),
   )
 }
 
@@ -67,9 +74,6 @@ export function headLineOf(row: Element): number | null {
   const cell = headNumberCell(row)
   return cell ? lineNumberOf(cell) : null
 }
-
-const CODE_TEXT_SELECTOR = '.blob-code-inner, [class*="diff-text-inner" i]'
-const CODE_MARKER_SELECTOR = '[class*="diff-text-marker" i]'
 
 function cellCodeText(cell: Element): string {
   const inner = cell.querySelector(CODE_TEXT_SELECTOR)

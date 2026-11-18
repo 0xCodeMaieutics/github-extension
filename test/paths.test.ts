@@ -37,6 +37,10 @@ describe("buildEditorFileUrl", () => {
     expect(buildEditorFileUrl("vscode", "/Users/me/ky/source/Ky.ts", 90)).toBe("vscode://file/Users/me/ky/source/Ky.ts:90:1")
   })
 
+  it("leaves out the line and column when there is no line", () => {
+    expect(buildEditorFileUrl("zed", "/Users/me/ky/source/Ky.ts", null)).toBe("zed://file/Users/me/ky/source/Ky.ts")
+  })
+
   it("prefixes Windows drives with a slash and keeps the colon", () => {
     expect(buildEditorFileUrl("vscode", "C:\\code\\ky\\a.ts", 3)).toBe("vscode://file/C:/code/ky/a.ts:3:1")
   })
