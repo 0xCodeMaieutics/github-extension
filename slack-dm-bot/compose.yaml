@@ -1,0 +1,16 @@
+# Fixed project name keeps the existing container and delivery-dedupe volume.
+name: github-slack-dm
+
+services:
+  github-slack-dm:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      # Only reachable from this machine; the Cloudflare tunnel forwards to it.
+      - "127.0.0.1:8083:8083"
+    volumes:
+      - deliveries:/data
+
+volumes:
+  deliveries:
