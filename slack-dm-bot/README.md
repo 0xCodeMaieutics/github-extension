@@ -12,6 +12,31 @@ You get a DM when:
 
 Your own activity is skipped. Each DM has the actor, the PR title linked to the specific review or comment, the file path for inline comments, and a short excerpt.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dms-dark.png">
+  <img src="docs/screenshots/dms.png" alt="A Slack DM from the GitHub DM app with six notifications: a review request, a Cursor Bugbot inline comment with its file path, a changes-requested review, a top-level PR comment, a resolved review thread, and an approval, each linking to the PR and quoting an excerpt" width="640">
+</picture>
+
+## How it works
+
+```mermaid
+sequenceDiagram
+    participant GH as GitHub
+    participant CF as Cloudflare tunnel
+    participant Bot as slack-dm-bot
+    participant Slack
+    GH->>CF: POST /webhooks/github
+    CF->>Bot: forward to 127.0.0.1:8083
+    Bot->>Bot: verify signature
+    Bot->>Bot: skip if delivery ID already seen
+    alt event is about you and not by you
+        Bot->>Slack: chat.postMessage to your DM
+        Bot-->>GH: 200 notified
+    else anything else
+        Bot-->>GH: 200 ignored
+    end
+```
+
 ## Setup
 
 1. **Slack app**: at <https://api.slack.com/apps>, choose *Create New App → Paste a manifest*, pick your workspace, and paste `slack-app-manifest.yaml`. Then click *Install to Workspace* and copy the *Bot User OAuth Token* (`xoxb-…`) from *OAuth & Permissions*. Get your member ID from your Slack profile: *⋮ → Copy member ID*.
