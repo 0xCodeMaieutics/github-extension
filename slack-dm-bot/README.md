@@ -62,18 +62,21 @@ sequenceDiagram
 
 Note: `trycloudflare.com` quick-tunnel URLs change whenever `cloudflared` restarts. If that happens, update the webhook's Payload URL.
 
-## Deploy on Render
+## Deploy on Fly.io
 
-`render.yaml` at the repo root defines the bot as a Render web service, so it doesn't need your machine or a tunnel.
+`fly.toml` deploys the bot as the Fly app `gh-review-dm-bot` (Fly rejects app names containing "github") on one always-on machine in Frankfurt, so it doesn't need your machine or a tunnel. Run these from `slack-dm-bot/`:
 
-1. Open <https://dashboard.render.com/blueprint/new?repo=https://github.com/0xCodeMaieutics/github-extension>, connect the repo if asked, and apply the Blueprint.
-2. Render prompts for `GITHUB_WEBHOOK_SECRET`, `GITHUB_USERNAME`, `SLACK_BOT_TOKEN`, and `SLACK_USER_ID`. Use the same values as your `.env`.
-3. Once the deploy is live, `curl https://<service>.onrender.com/healthz` returns `ok`.
-4. Set each GitHub webhook's Payload URL to `https://<service>.onrender.com/webhooks/github`, then stop the local container and tunnel so you don't get two DMs per event.
+```sh
+fly apps create gh-review-dm-bot --org personal   # first time only
+rg '^(GITHUB_WEBHOOK_SECRET|GITHUB_USERNAME|SLACK_BOT_TOKEN|SLACK_USER_ID)=' .env \
+  | fly secrets import --stage
+fly deploy --ha=false
+curl https://gh-review-dm-bot.fly.dev/healthz   # -> ok
+```
 
-The service uses the paid `0.5c-512mb` plan. The free plan sleeps when idle, and its cold start takes longer than GitHub's 10-second webhook timeout, so deliveries would fail. There is no persistent disk, so the delivery dedupe history resets on each deploy. That only matters if you manually redeliver an old webhook.
+`--ha=false` keeps a single machine. Each machine has its own dedupe database, so two machines could each send the same delivery. Then set each GitHub webhook's Payload URL to `https://gh-review-dm-bot.fly.dev/webhooks/github`, and stop the local container and tunnel so you don't get two DMs per event.
 
-Pushes to `main` that touch `slack-dm-bot/` redeploy automatically.
+There is no volume, so the delivery dedupe history resets on each deploy. That only matters if you manually redeliver an old webhook. To redeploy after changing `app.py`, run `fly deploy` again. Logs: `fly logs`.
 
 ## Manual smoke check
 
