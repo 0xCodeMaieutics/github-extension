@@ -148,7 +148,7 @@ function CursorReviewDialog({ onClose }: { onClose: () => void }) {
 function Panel({ onClose }: { onClose: () => void }) {
   const pullRequest = useMemo<PullRequest | null>(() => readPullRequest(), []);
   const [load, setLoad] = useState<Load>({ status: 'loading' });
-  const [destinationType, setDestinationType] = useState<Destination['type']>('channel');
+  const [destinationType, setDestinationType] = useState<Destination['type']>('direct');
   const [channelId, setChannelId] = useState('');
   const [reviewerIds, setReviewerIds] = useState<string[]>([]);
   const [note, setNote] = useState('');
@@ -239,7 +239,7 @@ function Panel({ onClose }: { onClose: () => void }) {
           }}
         >
           <div class="segmented" role="radiogroup" aria-label="Destination">
-            {(['channel', 'direct'] as const).map((type) => (
+            {(['direct', 'channel'] as const).map((type) => (
               <button
                 key={type}
                 type="button"
