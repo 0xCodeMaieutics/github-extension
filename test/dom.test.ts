@@ -125,3 +125,30 @@ describe("findFileContainers and findAffordanceSlot", () => {
     expect(reactSlot.before?.previousSibling?.nodeName).toBe("H3")
   })
 })
+
+describe("postPageComment", () => {
+  it("fills the classic comment box and clicks Comment", async () => {
+    const { postPageComment } = await import("../lib/page-comment")
+    document.body.innerHTML = `
+      <form class="js-new-comment-form">
+        <textarea id="new_comment_field" name="comment[body]"></textarea>
+        <button type="button">Close pull request</button>
+        <button type="submit">Comment</button>
+      </form>`
+    const form = document.querySelector("form")!
+    let posted = ""
+    form.addEventListener("submit", (e) => {
+      e.preventDefault()
+      posted = (document.getElementById("new_comment_field") as HTMLTextAreaElement).value
+    })
+    await postPageComment("@cursor review")
+    expect(posted).toBe("@cursor review")
+  })
+
+  it("refuses to overwrite a draft or post without a comment box", async () => {
+    const { postPageComment } = await import("../lib/page-comment")
+    await expect(postPageComment("@cursor review")).rejects.toThrow(/Conversation tab/)
+    document.body.innerHTML = `<textarea id="new_comment_field">draft</textarea><button>Comment</button>`
+    await expect(postPageComment("@cursor review")).rejects.toThrow(/draft/)
+  })
+})
