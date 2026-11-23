@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { CursorIcon } from '@/components/CursorIcon';
 import { SlackIcon } from '@/components/SlackIcon';
 import { request, type SendResult } from '@/lib/messaging';
+import { postPageComment } from '@/lib/page-comment';
 import { readPullRequest, type PullRequest } from '@/lib/pull-request';
 import { formatReviewRequest, type Destination } from '@/lib/review-request';
 import type { SlackChannel, SlackMember } from '@/lib/slack';
@@ -27,9 +29,22 @@ function toPreview(text: string, members: SlackMember[]): string {
 
 export function App() {
   const [open, setOpen] = useState(false);
+  const [cursorOpen, setCursorOpen] = useState(false);
 
   return (
     <div class="root">
+      <button
+        type="button"
+        class="trigger"
+        aria-label="Start Cursor review"
+        title="Start Cursor review"
+        aria-haspopup="dialog"
+        aria-expanded={cursorOpen}
+        onClick={() => setCursorOpen(true)}
+      >
+        <CursorIcon size={24} />
+      </button>
+      {cursorOpen && <CursorReviewDialog onClose={() => setCursorOpen(false)} />}
       <button
         type="button"
         class="trigger"
@@ -65,6 +80,67 @@ function Dialog({ onClose }: { onClose: () => void }) {
       onClick={(event) => event.target === dialogRef.current && onClose()}
     >
       <Panel onClose={onClose} />
+    </dialog>
+  );
+}
+
+const CURSOR_REVIEW_COMMENT = '@cursor review';
+
+type Post = { status: 'idle' } | { status: 'posting' } | { status: 'error'; error: string };
+
+/** Asks for confirmation, then comments `@cursor review` on the PR so Cursor Bugbot starts a review. */
+function CursorReviewDialog({ onClose }: { onClose: () => void }) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const [post, setPost] = useState<Post>({ status: 'idle' });
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    dialog?.showModal();
+    return () => dialog?.close();
+  }, []);
+
+  const confirm = async () => {
+    setPost({ status: 'posting' });
+    try {
+      await postPageComment(CURSOR_REVIEW_COMMENT);
+      onClose();
+    } catch (error) {
+      setPost({ status: 'error', error: String((error as Error).message ?? error) });
+    }
+  };
+
+  return (
+    <dialog
+      ref={dialogRef}
+      class="dialog dialog--confirm"
+      aria-label="Start Cursor review"
+      onClose={onClose}
+      onClick={(event) => event.target === dialogRef.current && onClose()}
+    >
+      <div class="panel">
+        <header class="panel__header">
+          <CursorIcon size={18} />
+          <strong>Start Cursor review</strong>
+          <button type="button" class="icon-button" aria-label="Close" onClick={onClose}>
+            ×
+          </button>
+        </header>
+        <div class="panel__body">
+          <p class="confirm__text">
+            Are you sure you want to start a Cursor review? This comments <code>{CURSOR_REVIEW_COMMENT}</code> on this
+            pull request.
+          </p>
+          {post.status === 'error' && <p class="notice notice--error">{post.error}</p>}
+          <div class="confirm__actions">
+            <button type="button" class="btn" onClick={onClose}>
+              No
+            </button>
+            <button type="button" class="btn btn--primary" disabled={post.status === 'posting'} onClick={confirm}>
+              {post.status === 'posting' ? 'Posting…' : 'Yes'}
+            </button>
+          </div>
+        </div>
+      </div>
     </dialog>
   );
 }
