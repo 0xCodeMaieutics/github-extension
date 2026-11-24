@@ -11,7 +11,7 @@ You get a DM when:
 - someone **resolves or unresolves a review thread** on a PR you opened
 - **CI finishes** on the latest commit of a PR you opened: once when the first check fails (with links to the failing checks), and once when every check and commit status has passed.
 
-GitHub has no "all checks passed" event, so the bot records every check run and commit status it hears about and DMs you once the whole set for a commit has settled. It only knows about checks that have reported in, so an app that registers its check late can miss the green ping.
+GitHub has no "all checks passed" event, so the bot records every check run and commit status it hears about and DMs you once the whole set for a commit has settled. It only knows about checks that have reported in, and CI jobs often register only when they start, so a commit can look green early on (for example, when a fast status lands before the CI jobs exist). A failure is sent right away. The green DM waits until the commit has stayed all green with no check activity for `CI_SETTLE_SECONDS` (default 60). A check that registers even later than that can still miss the green ping.
 
 Your own activity is skipped. Each DM is a single line: the actor, what they did, and the PR title linked to the specific review or comment.
 
