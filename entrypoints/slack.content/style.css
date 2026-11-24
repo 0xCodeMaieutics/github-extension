@@ -78,6 +78,15 @@ textarea {
   padding: 16px;
 }
 
+.panel__actions {
+  display: flex;
+  gap: 8px;
+}
+
+.panel__actions .btn--primary {
+  flex: 1;
+}
+
 .icon-button {
   width: 28px;
   height: 28px;

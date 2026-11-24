@@ -13,16 +13,44 @@ type Load =
 
 type Send = { status: 'idle' } | { status: 'sending' } | { status: 'sent'; result: SendResult } | { status: 'error'; error: string };
 
+const resolveMentions = (text: string, members: SlackMember[]) =>
+  text.replace(/<@(\w+)>/g, (_, id) => `@${members.find((m) => m.id === id)?.realName ?? id}`);
+
+const unescape = (text: string) => text.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+
 /** Slack mrkdwn shown as plain text, with mentions and links resolved to names. */
 function toPreview(text: string, members: SlackMember[]): string {
-  return text
-    .replace(/<@(\w+)>/g, (_, id) => `@${members.find((m) => m.id === id)?.realName ?? id}`)
-    .replace(/<([^|>]+)\|([^>]+)>/g, '$2')
-    .replace(/\*([^*\n]+)\*/g, '$1')
-    .replace(':eyes:', '👀')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&amp;/g, '&');
+  return unescape(
+    resolveMentions(text, members)
+      .replace(/<([^|>]+)\|([^>]+)>/g, '$2')
+      .replace(/\*([^*\n]+)\*/g, '$1')
+      .replace(':eyes:', '👀'),
+  );
+}
+
+/** Slack mrkdwn as clipboard text: HTML (keeps the link and bold when pasted into Slack) and a plain fallback. */
+function toClipboard(text: string, members: SlackMember[]): { html: string; plain: string } {
+  const resolved = resolveMentions(text, members).trim();
+  const html = resolved
+    .replace(/<([^|>]+)\|([^>]+)>/g, (_, url, label) => `<a href="${url.replace(/"/g, '&quot;')}">${label}</a>`)
+    .replace(/\*([^*\n]+)\*/g, '<b>$1</b>')
+    .split('\n')
+    .join('<br>');
+  const plain = unescape(resolved.replace(/<([^|>]+)\|([^>]+)>/g, '$2 ($1)').replace(/\*([^*\n]+)\*/g, '$1'));
+  return { html, plain };
+}
+
+async function copyToClipboard({ html, plain }: { html: string; plain: string }): Promise<void> {
+  if (typeof ClipboardItem !== 'undefined' && navigator.clipboard.write) {
+    await navigator.clipboard.write([
+      new ClipboardItem({
+        'text/html': new Blob([html], { type: 'text/html' }),
+        'text/plain': new Blob([plain], { type: 'text/plain' }),
+      }),
+    ]);
+  } else {
+    await navigator.clipboard.writeText(plain);
+  }
 }
 
 export function App() {
@@ -77,6 +105,7 @@ function Panel({ onClose }: { onClose: () => void }) {
   const [reviewerIds, setReviewerIds] = useState<string[]>([]);
   const [note, setNote] = useState('');
   const [send, setSend] = useState<Send>({ status: 'idle' });
+  const [copy, setCopy] = useState<'idle' | 'copied' | 'error'>('idle');
 
   useEffect(() => {
     let cancelled = false;
@@ -108,6 +137,17 @@ function Panel({ onClose }: { onClose: () => void }) {
 
   const toggleReviewer = (id: string) =>
     setReviewerIds(reviewerIds.includes(id) ? reviewerIds.filter((x) => x !== id) : [...reviewerIds, id]);
+
+  const copyMessage = async () => {
+    if (!reviewRequest) return;
+    try {
+      await copyToClipboard(toClipboard(formatReviewRequest(reviewRequest), developers));
+      setCopy('copied');
+    } catch {
+      setCopy('error');
+    }
+    setTimeout(() => setCopy('idle'), 2000);
+  };
 
   const submit = async () => {
     if (!reviewRequest || !canSend) return;
@@ -247,13 +287,18 @@ function Panel({ onClose }: { onClose: () => void }) {
           )}
           {send.status === 'error' && <p class="notice notice--error">{send.error}</p>}
 
-          <button type="submit" class="btn btn--primary" disabled={!canSend}>
-            {send.status === 'sending'
-              ? 'Sending…'
-              : destinationType === 'direct' && reviewerIds.length > 1
-                ? `Send ${reviewerIds.length} direct messages`
-                : 'Send review request'}
-          </button>
+          <div class="panel__actions">
+            <button type="button" class="btn" disabled={!reviewRequest || reviewerIds.length === 0} onClick={copyMessage}>
+              {copy === 'copied' ? 'Copied!' : copy === 'error' ? 'Copy failed' : 'Copy message'}
+            </button>
+            <button type="submit" class="btn btn--primary" disabled={!canSend}>
+              {send.status === 'sending'
+                ? 'Sending…'
+                : destinationType === 'direct' && reviewerIds.length > 1
+                  ? `Send ${reviewerIds.length} direct messages`
+                  : 'Send review request'}
+            </button>
+          </div>
         </form>
       )}
     </div>
