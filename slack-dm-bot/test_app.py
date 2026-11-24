@@ -178,3 +178,119 @@ class WebhookTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+
+SHA = "abc123"
+OPEN_PR = dict(MY_PR, state="open", head={"sha": SHA})
+
+
+class CITests(unittest.TestCase):
+    def setUp(self):
+        self.sent = []
+        self.fail_send = False
+
+        def send(token, user, text):
+            if self.fail_send:
+                raise app.SlackError("boom")
+            self.sent.append(text)
+
+        self.app = app.App(SECRET, ME, "xoxb-test", "U123", FakeStore(), send=send)
+        self.deliveries = 0
+        self.run_ids = {}
+
+    def post(self, event, payload):
+        self.deliveries += 1
+        body = json.dumps(dict(payload, repository=REPO)).encode()
+        return self.app.handle_webhook({
+            "X-GitHub-Event": event,
+            "X-GitHub-Delivery": f"d-{self.deliveries}",
+            "X-Hub-Signature-256": sign(body),
+        }, body)
+
+    def pr_event(self, action="synchronize", pr=OPEN_PR):
+        return self.post("pull_request", {"action": action, "pull_request": pr,
+                                          "sender": {"login": ME}})
+
+    def check(self, name, conclusion=None, action=None, run_id=None, sha=SHA):
+        """A check_run event; a new run id per name unless given."""
+        if run_id is None:
+            run_id = self.run_ids.setdefault(name, len(self.run_ids) + 1)
+        done = conclusion is not None
+        # Sender is me on purpose: CI on my own push must still notify.
+        return self.post("check_run", {
+            "action": action or ("completed" if done else "created"),
+            "check_run": {"id": run_id, "name": name, "head_sha": sha, "app": {"id": 15368},
+                          "status": "completed" if done else "queued", "conclusion": conclusion,
+                          "details_url": f"https://ci.example/{name}"},
+            "sender": {"login": ME},
+        })
+
+    def test_all_green_once_per_commit(self):
+        self.pr_event()
+        self.check("lint")
+        self.check("test")
+        self.assertEqual(self.check("lint", "success"), (200, "ignored"))  # test still queued
+        self.assertEqual(self.check("test", "success"), (200, "notified"))
+        self.assertEqual(self.check("test", "success"), (200, "already notified"))
+        self.assertEqual(self.sent, [
+            ":white_check_mark: All checks passed on "
+            "<https://github.com/acme/widgets/pull/7/checks|acme/widgets#7: Add &lt;widgets&gt; &amp; things>"
+        ])
+
+    def test_first_failure_notifies_without_waiting(self):
+        self.pr_event()
+        self.check("test")
+        self.assertEqual(self.check("lint", "failure"), (200, "notified"))
+        self.assertEqual(self.sent[0],
+                         ":x: CI failed on <https://github.com/acme/widgets/pull/7/checks|"
+                         "acme/widgets#7: Add &lt;widgets&gt; &amp; things>: <https://ci.example/lint|lint>")
+        self.assertEqual(self.check("test", "timed_out"), (200, "already notified"))
+
+    def test_green_after_rerun_fixes_failure(self):
+        self.pr_event()
+        self.check("lint", "failure")
+        self.check("lint", run_id=99)  # re-run is a new check run
+        self.assertEqual(self.check("lint", "success", run_id=99), (200, "notified"))
+        self.assertIn("All checks passed", self.sent[1])
+
+    def test_out_of_order_deliveries(self):
+        self.pr_event()
+        self.check("lint", "success", run_id=5)
+        self.assertEqual(self.check("lint", run_id=5), (200, "already notified"))  # late "created"
+        self.assertEqual(self.check("lint", "failure", run_id=4), (200, "already notified"))  # older run
+        self.assertEqual(len(self.sent), 1)
+
+    def test_commit_statuses(self):
+        self.pr_event()
+        self.check("lint", "success")  # green so far
+        self.post("status", {"id": 1, "sha": SHA, "context": "ci/legacy", "state": "pending"})
+        self.assertEqual(
+            self.post("status", {"id": 2, "sha": SHA, "context": "ci/legacy", "state": "error",
+                                 "target_url": None}),
+            (200, "notified"))
+        self.assertEqual(len(self.sent), 2)
+        self.assertTrue(self.sent[1].endswith(": ci/legacy"))
+
+    def test_ci_done_before_pr_opened(self):
+        self.check("lint", "success")
+        self.assertEqual(self.pr_event("opened"), (200, "notified"))
+
+    def test_unknown_pr_ignored(self):
+        self.assertEqual(self.check("lint", "success"), (200, "ignored"))
+
+    def test_skips_others_prs_stale_heads_and_closed(self):
+        self.pr_event(pr=dict(OPEN_PR, user={"login": "someone-else"}))
+        self.assertEqual(self.check("lint", "success"), (200, "ignored"))
+        self.pr_event(pr=dict(OPEN_PR, head={"sha": "newer"}))
+        self.assertEqual(self.check("test", "success"), (200, "ignored"))
+        self.pr_event("closed", pr=dict(OPEN_PR, state="closed"))
+        self.assertEqual(self.check("docs", "success"), (200, "ignored"))
+        self.assertEqual(self.sent, [])
+
+    def test_slack_failure_allows_retry(self):
+        self.pr_event()
+        self.fail_send = True
+        self.assertEqual(self.check("lint", "success")[0], 502)
+        self.fail_send = False
+        self.assertEqual(self.check("lint", "success"), (200, "notified"))

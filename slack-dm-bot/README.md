@@ -9,6 +9,9 @@ You get a DM when:
 - someone leaves a **top-level comment** on a PR you opened
 - someone leaves an **inline comment** on a PR you opened. This includes Cursor Bugbot findings. A Bugbot-style review with an empty summary is skipped because each of its inline comments is sent as its own DM.
 - someone **resolves or unresolves a review thread** on a PR you opened
+- **CI finishes** on the latest commit of a PR you opened: once when the first check fails (with links to the failing checks), and once when every check and commit status has passed.
+
+GitHub has no "all checks passed" event, so the bot records every check run and commit status it hears about and DMs you once the whole set for a commit has settled. It only knows about checks that have reported in, so an app that registers its check late can miss the green ping.
 
 Your own activity is skipped. Each DM is a single line: the actor, what they did, and the PR title linked to the specific review or comment.
 
@@ -45,7 +48,7 @@ sequenceDiagram
    cp .env.example .env
    openssl rand -hex 32   # use as GITHUB_WEBHOOK_SECRET
    ```
-   Fill in all four values in `.env`.
+   Fill in the four required values in `.env`.
 3. **Run**:
    ```sh
    docker compose up -d --build
@@ -56,7 +59,7 @@ sequenceDiagram
    - Payload URL: `https://<your-tunnel>.trycloudflare.com/webhooks/github`
    - Content type: `application/json`
    - Secret: your `GITHUB_WEBHOOK_SECRET`
-   - Events: *Let me select individual events* → **Pull requests**, **Pull request reviews**, **Pull request review comments**, **Pull request review threads**, **Issue comments**
+   - Events: *Let me select individual events* → **Pull requests**, **Pull request reviews**, **Pull request review comments**, **Pull request review threads**, **Issue comments**, and for CI result DMs **Check runs** and **Statuses**
 
    GitHub sends a `ping` when you save. Under *Recent Deliveries* it should show `200 pong`.
 
@@ -76,7 +79,7 @@ curl https://example-bot-url.fly.dev/healthz   # -> ok
 
 `--ha=false` keeps a single machine. Each machine has its own dedupe database, so two machines could each send the same delivery. Then set each GitHub webhook's Payload URL to `https://example-bot-url.fly.dev/webhooks/github`, and stop the local container and tunnel so you don't get two DMs per event.
 
-There is no volume, so the delivery dedupe history resets on each deploy. That only matters if you manually redeliver an old webhook. To redeploy after changing `app.py`, run `fly deploy` again. Logs: `fly logs`.
+There is no volume, so the bot's SQLite state resets on each deploy. For the delivery dedupe history, that only matters if you manually redeliver an old webhook. CI tracking loses the PRs and checks it has seen, so an existing PR gets CI DMs again from its next push. To redeploy after changing `app.py`, run `fly deploy` again. Logs: `fly logs`.
 
 ### Automatic deploys
 
