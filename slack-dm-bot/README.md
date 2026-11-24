@@ -78,6 +78,17 @@ curl https://gh-review-dm-bot.fly.dev/healthz   # -> ok
 
 There is no volume, so the delivery dedupe history resets on each deploy. That only matters if you manually redeliver an old webhook. To redeploy after changing `app.py`, run `fly deploy` again. Logs: `fly logs`.
 
+### Automatic deploys
+
+`.github/workflows/ci.yml` redeploys the bot on every push to `main` that touches `slack-dm-bot/**`. It runs the unit tests first, then `flyctl deploy --ha=false --remote-only`. Create a deploy token once and add it as the repo secret `FLY_API_TOKEN`:
+
+```sh
+fly tokens create deploy -a gh-review-dm-bot
+# paste into GitHub → Settings → Secrets and variables → Actions → New repository secret
+```
+
+You can also trigger a deploy by hand from the Actions tab (*Run workflow*).
+
 ## Manual smoke check
 
 Run the unit tests (no Docker needed):
