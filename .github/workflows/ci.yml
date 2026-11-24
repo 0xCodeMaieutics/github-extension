@@ -21,8 +21,8 @@ jobs:
       run:
         working-directory: slack-dm-bot
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
       - name: Run unit tests
@@ -34,7 +34,7 @@ jobs:
     # Only the real branch deploys; a manual run on any branch is allowed.
     concurrency: deploy-slack-dm-bot-fly
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: superfly/flyctl-actions/setup-flyctl@master
       - name: Deploy to Fly
         working-directory: slack-dm-bot
