@@ -92,7 +92,7 @@ class WebhookTests(unittest.TestCase):
         self.post("pull_request_review", self.review("bob", "changes_requested", "Please fix <!-- x --> the tests"))
         text = self.sent[0][1]
         self.assertIn("*bob* requested changes on <https://github.com/acme/widgets/pull/7#pullrequestreview-1|", text)
-        self.assertIn("> Please fix the tests", text)
+        self.assertNotIn("Please fix", text)
 
     def test_approval_without_body_still_notifies(self):
         self.assertEqual(self.post("pull_request_review", self.review("bob", "APPROVED", None))[1], "notified")
@@ -121,9 +121,8 @@ class WebhookTests(unittest.TestCase):
         self.assertEqual(self.post("pull_request_review_comment", payload)[1], "notified")
         text = self.sent[0][1]
         self.assertIn("*cursor[bot]* left an inline comment on <https://github.com/acme/widgets/pull/7#discussion_r9|", text)
-        self.assertIn("`src/loop.py`", text)
-        self.assertIn("> ### Bug: Off-by-one in loop The loop skips the last item.", text)
-        self.assertNotIn("BUGBOT_BUG_ID", text)
+        self.assertNotIn("src/loop.py", text)
+        self.assertNotIn("Off-by-one", text)
 
     # review threads
 
@@ -136,8 +135,8 @@ class WebhookTests(unittest.TestCase):
         self.assertEqual(self.post("pull_request_review_thread", self.thread("bob"))[1], "notified")
         text = self.sent[0][1]
         self.assertIn("*bob* resolved a review thread on <https://github.com/acme/widgets/pull/7#discussion_r9|", text)
-        self.assertIn("`src/loop.py`", text)
-        self.assertIn("> Off-by-one here", text)
+        self.assertNotIn("src/loop.py", text)
+        self.assertNotIn("Off-by-one", text)
 
     def test_thread_unresolved(self):
         self.post("pull_request_review_thread", self.thread("bob", "unresolved"))
@@ -157,12 +156,15 @@ class WebhookTests(unittest.TestCase):
                 "comment": {"user": {"login": user}, "body": "x" * 500,
                             "html_url": "https://github.com/acme/widgets/pull/7#issuecomment-3"}}
 
-    def test_top_level_comment_truncated(self):
+    def test_top_level_comment_headline_only(self):
         self.post("issue_comment", self.issue_comment("alice"))
         text = self.sent[0][1]
-        self.assertIn("*alice* commented on <https://github.com/acme/widgets/pull/7#issuecomment-3|", text)
-        self.assertTrue(text.endswith("…"))
-        self.assertLess(len(text), 450)
+        self.assertEqual(
+            text,
+            "*alice* commented on "
+            "<https://github.com/acme/widgets/pull/7#issuecomment-3|acme/widgets#7: Add widgets>",
+        )
+        self.assertNotIn("x" * 500, text)
 
     def test_comment_on_plain_issue_ignored(self):
         self.assertEqual(self.post("issue_comment", self.issue_comment("alice", on_pr=False))[1], "ignored")

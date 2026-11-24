@@ -52,15 +52,9 @@ def login(obj):
     return (obj or {}).get("login") or ""
 
 
-def format_message(actor, verb, url, repo, pr, extra_lines=()):
+def format_message(actor, verb, url, repo, pr):
     title = slack_escape(f"{repo}#{pr.get('number')}: {pr.get('title', '')}")
-    lines = [f"*{slack_escape(actor)}* {verb} <{url}|{title}>"]
-    lines.extend(line for line in extra_lines if line)
-    return "\n".join(lines)
-
-
-def quote(text):
-    return f"> {slack_escape(text)}" if text else ""
+    return f"*{slack_escape(actor)}* {verb} <{url}|{title}>"
 
 
 # --- Event handlers ---------------------------------------------------------
@@ -99,17 +93,14 @@ def on_pull_request_review(payload, me):
     if not same_user(login(pr.get("user")), me) or same_user(actor, me):
         return None
     state = (review.get("state") or "").lower()
-    text = excerpt(review.get("body"))
     # A "commented" review with no summary is just a container for inline
     # comments (e.g. Cursor Bugbot); those arrive as pull_request_review_comment
     # events and are notified individually.
-    if state == "commented" and not text:
+    if state == "commented" and not excerpt(review.get("body")):
         return None
     verb = REVIEW_VERBS.get(state, "reviewed")
     url = review.get("html_url") or pr["html_url"]
-    return format_message(
-        actor, verb, url, payload["repository"]["full_name"], pr, [quote(text)]
-    )
+    return format_message(actor, verb, url, payload["repository"]["full_name"], pr)
 
 
 def on_pull_request_review_comment(payload, me):
@@ -120,15 +111,12 @@ def on_pull_request_review_comment(payload, me):
     actor = login(comment.get("user")) or login(payload.get("sender"))
     if not same_user(login(pr.get("user")), me) or same_user(actor, me):
         return None
-    path = comment.get("path")
-    location = f"`{slack_escape(path)}`" if path else ""
     return format_message(
         actor,
         "left an inline comment on",
         comment.get("html_url") or pr["html_url"],
         payload["repository"]["full_name"],
         pr,
-        [location, quote(excerpt(comment.get("body")))],
     )
 
 
@@ -148,7 +136,6 @@ def on_issue_comment(payload, me):
         comment.get("html_url") or issue["html_url"],
         payload["repository"]["full_name"],
         issue,
-        [quote(excerpt(comment.get("body")))],
     )
 
 
@@ -162,15 +149,12 @@ def on_pull_request_review_thread(payload, me):
         return None
     comments = (payload.get("thread") or {}).get("comments") or []
     first = comments[0] if comments else {}
-    path = first.get("path")
-    location = f"`{slack_escape(path)}`" if path else ""
     return format_message(
         actor,
         f"{action} a review thread on",
         first.get("html_url") or pr["html_url"],
         payload["repository"]["full_name"],
         pr,
-        [location, quote(excerpt(first.get("body")))],
     )
 
 

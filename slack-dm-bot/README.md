@@ -10,11 +10,11 @@ You get a DM when:
 - someone leaves an **inline comment** on a PR you opened. This includes Cursor Bugbot findings. A Bugbot-style review with an empty summary is skipped because each of its inline comments is sent as its own DM.
 - someone **resolves or unresolves a review thread** on a PR you opened
 
-Your own activity is skipped. Each DM has the actor, the PR title linked to the specific review or comment, the file path for inline comments, and a short excerpt.
+Your own activity is skipped. Each DM is a single line: the actor, what they did, and the PR title linked to the specific review or comment.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dms-dark.png">
-  <img src="docs/screenshots/dms.png" alt="A Slack DM from the GitHub DM app with six notifications: a review request, a Cursor Bugbot inline comment with its file path, a changes-requested review, a top-level PR comment, a resolved review thread, and an approval, each linking to the PR and quoting an excerpt" width="640">
+  <img src="docs/screenshots/dms.png" alt="A Slack DM from the GitHub DM app with six notifications: a review request, a Cursor Bugbot inline comment, a changes-requested review, a top-level PR comment, a resolved review thread, and an approval, each a single line linking to the PR" width="640">
 </picture>
 
 ## How it works
