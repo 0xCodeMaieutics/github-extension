@@ -1,7 +1,8 @@
 """GitHub -> Slack DM notifier for a single user.
 
 Receives GitHub webhooks, verifies their signature, and DMs the configured
-Slack user about review requests and feedback on PRs they opened.
+Slack user about review requests and feedback on PRs they opened, and about
+CI results (all checks green, or the first failure) on those PRs.
 Deliveries are deduplicated in SQLite by X-GitHub-Delivery.
 """
 
@@ -176,6 +177,66 @@ def build_message(event, payload, me):
     return handler(payload, me)
 
 
+# --- CI results -------------------------------------------------------------
+# GitHub has no "all checks passed" event, so the bot keeps its own record of
+# every check run and commit status per commit, built from the webhooks, and
+# looks at the whole set each time one changes. The result is DMed once per
+# commit and outcome: the first failure, and all checks green. PR author and
+# title come from the pull_request* events, which carry the full PR.
+
+CI_EVENTS = ("check_run", "status")
+CHECK_OK = ("success", "neutral", "skipped")
+
+
+def ci_update(event, payload):
+    """(repo, sha, key, name, run id, state, url) for a check change, or None.
+
+    state is "pending", "passed" or "failed".
+    """
+    repo = payload["repository"]["full_name"]
+    if event == "check_run":
+        if payload.get("action") not in ("created", "rerequested", "completed"):
+            return None
+        run = payload["check_run"]
+        if run.get("status") != "completed":
+            state = "pending"
+        elif run.get("conclusion") in CHECK_OK:
+            state = "passed"
+        else:
+            state = "failed"
+        app_id = (run.get("app") or {}).get("id") or ""
+        name = run.get("name") or "check"
+        return (repo, run["head_sha"], f"run:{app_id}:{name}", name, run.get("id") or 0,
+                state, run.get("details_url") or run.get("html_url"))
+    # status
+    state = {"pending": "pending", "success": "passed"}.get(payload.get("state"), "failed")
+    context = payload.get("context") or "status"
+    # Statuses have no ordering; their ids increase like check run ids.
+    return (repo, payload["sha"], f"status:{context}", context, payload.get("id") or 0,
+            state, payload.get("target_url"))
+
+
+def ci_outcome(checks):
+    """("failed", [(name, url)]), ("passed", []), or None while checks are still running."""
+    failed = [(name, url) for name, state, url in checks if state == "failed"]
+    if failed:
+        return "failed", failed
+    if not checks or any(state == "pending" for _, state, _ in checks):
+        return None
+    return "passed", []
+
+
+def format_ci_message(outcome, failed, repo, pr):
+    title = slack_escape(f"{repo}#{pr['number']}: {pr['title']}")
+    link = f"<{pr['html_url']}/checks|{title}>"
+    if outcome == "passed":
+        return f":white_check_mark: All checks passed on {link}"
+    names = ", ".join(
+        f"<{url}|{slack_escape(name)}>" if url else slack_escape(name) for name, url in failed
+    )
+    return f":x: CI failed on {link}: {names}"
+
+
 # --- Infrastructure ---------------------------------------------------------
 
 
@@ -195,8 +256,26 @@ class DeliveryStore:
             "CREATE TABLE IF NOT EXISTS deliveries ("
             " id TEXT PRIMARY KEY, event TEXT, received_at INTEGER NOT NULL)"
         )
+        self.db.execute(
+            "CREATE TABLE IF NOT EXISTS ci_notifications ("
+            " key TEXT PRIMARY KEY, notified_at INTEGER NOT NULL)"
+        )
+        self.db.execute(
+            "CREATE TABLE IF NOT EXISTS pull_requests ("
+            " repo TEXT, number INTEGER, head_sha TEXT, author TEXT, title TEXT,"
+            " html_url TEXT, open INTEGER, updated_at INTEGER NOT NULL,"
+            " PRIMARY KEY (repo, number))"
+        )
+        self.db.execute(
+            "CREATE TABLE IF NOT EXISTS checks ("
+            " repo TEXT, sha TEXT, key TEXT, name TEXT, run_id INTEGER, state TEXT,"
+            " url TEXT, updated_at INTEGER NOT NULL, PRIMARY KEY (repo, sha, key))"
+        )
         cutoff = int(time.time()) - DELIVERY_RETENTION_DAYS * 86400
         self.db.execute("DELETE FROM deliveries WHERE received_at < ?", (cutoff,))
+        self.db.execute("DELETE FROM ci_notifications WHERE notified_at < ?", (cutoff,))
+        self.db.execute("DELETE FROM pull_requests WHERE updated_at < ?", (cutoff,))
+        self.db.execute("DELETE FROM checks WHERE updated_at < ?", (cutoff,))
 
     def claim(self, delivery_id, event):
         """Record a delivery; False if it was already processed."""
@@ -212,6 +291,57 @@ class DeliveryStore:
     def release(self, delivery_id):
         """Forget a delivery so a GitHub redelivery can retry it."""
         self.db.execute("DELETE FROM deliveries WHERE id = ?", (delivery_id,))
+
+    def claim_ci(self, key):
+        """Record a CI notification (repo, commit, outcome); False if already sent."""
+        try:
+            self.db.execute(
+                "INSERT INTO ci_notifications (key, notified_at) VALUES (?, ?)",
+                (key, int(time.time())),
+            )
+            return True
+        except sqlite3.IntegrityError:
+            return False
+
+    def release_ci(self, key):
+        self.db.execute("DELETE FROM ci_notifications WHERE key = ?", (key,))
+
+    def save_pr(self, repo, pr):
+        self.db.execute(
+            "INSERT OR REPLACE INTO pull_requests VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (repo, pr["number"], pr["head"]["sha"], login(pr.get("user")), pr.get("title") or "",
+             pr["html_url"], int(pr.get("state") == "open"), int(time.time())),
+        )
+
+    def open_prs_at(self, repo, sha):
+        rows = self.db.execute(
+            "SELECT number, author, title, html_url FROM pull_requests"
+            " WHERE repo = ? AND head_sha = ? AND open = 1 ORDER BY number",
+            (repo, sha),
+        )
+        return [dict(zip(("number", "author", "title", "html_url"), row)) for row in rows]
+
+    def record_check(self, repo, sha, key, name, run_id, state, url):
+        """Store a check's latest state, ignoring deliveries that arrive out of order."""
+        row = self.db.execute(
+            "SELECT run_id, state FROM checks WHERE repo = ? AND sha = ? AND key = ?",
+            (repo, sha, key),
+        ).fetchone()
+        if row:
+            old_id, old_state = row
+            # An older run, or a late "created" for a run that already finished.
+            if run_id < old_id or (run_id == old_id and state == "pending" and old_state != "pending"):
+                return
+        self.db.execute(
+            "INSERT OR REPLACE INTO checks VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (repo, sha, key, name, run_id, state, url, int(time.time())),
+        )
+
+    def checks_at(self, repo, sha):
+        return self.db.execute(
+            "SELECT name, state, url FROM checks WHERE repo = ? AND sha = ? ORDER BY name",
+            (repo, sha),
+        ).fetchall()
 
 
 class SlackError(Exception):
@@ -265,8 +395,19 @@ class App:
         except ValueError:
             return 400, "body must be JSON (set content type to application/json)"
 
+        ci_key = None
         try:
-            message = build_message(event, payload, self.github_username)
+            pr = payload.get("pull_request")
+            if isinstance(pr, dict) and "head" in pr:
+                self.store.save_pr(payload["repository"]["full_name"], pr)
+            if event in CI_EVENTS:
+                message, ci_key = self.ci_message(event, payload)
+            elif event == "pull_request" and payload.get("action") in ("opened", "reopened"):
+                # CI on a pushed branch can finish before its PR is opened.
+                message, ci_key = self.ci_result(payload["repository"]["full_name"],
+                                                 pr["head"]["sha"])
+            else:
+                message = build_message(event, payload, self.github_username)
         except (KeyError, TypeError, AttributeError):
             log.exception("delivery=%s event=%s: unexpected payload shape", delivery, event)
             return 400, "unexpected payload"
@@ -278,14 +419,45 @@ class App:
             log.info("delivery=%s event=%s action=%s: ignored",
                      delivery, event, payload.get("action"))
             return 200, "ignored"
+        if ci_key and not self.store.claim_ci(ci_key):
+            log.info("delivery=%s event=%s: %s already notified", delivery, event, ci_key)
+            return 200, "already notified"
         try:
             self.send(self.slack_token, self.slack_user_id, message)
         except SlackError as exc:
             self.store.release(delivery)
+            if ci_key:
+                self.store.release_ci(ci_key)
             log.error("delivery=%s event=%s: Slack send failed: %s", delivery, event, exc)
             return 502, "slack send failed"
         log.info("delivery=%s event=%s: notified", delivery, event)
         return 200, "notified"
+
+    def ci_message(self, event, payload):
+        """(message, dedupe key) for a CI result on one of my open PRs, or (None, None).
+
+        Unlike the other events, the sender doesn't matter: a check run on your
+        own push is exactly what you want to hear about.
+        """
+        update = ci_update(event, payload)
+        if update is None:
+            return None, None
+        self.store.record_check(*update)
+        return self.ci_result(update[0], update[1])
+
+    def ci_result(self, repo, sha):
+        pr = next(
+            (p for p in self.store.open_prs_at(repo, sha)
+             if same_user(p["author"], self.github_username)),
+            None,
+        )
+        if pr is None:
+            return None, None
+        result = ci_outcome(self.store.checks_at(repo, sha))
+        if result is None:
+            return None, None
+        outcome, failed = result
+        return format_ci_message(outcome, failed, repo, pr), f"{repo}@{sha}:{outcome}"
 
 
 def make_handler(app):
