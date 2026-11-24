@@ -53,7 +53,7 @@ sequenceDiagram
    ```
    The service listens only on `127.0.0.1:8083`. The existing Cloudflare tunnel must forward to `http://127.0.0.1:8083`.
 4. **GitHub webhook**: add it on each repo (or org) under *Settings → Webhooks → Add webhook*:
-   - Payload URL: `https://sense-indicators-powers-emerging.trycloudflare.com/webhooks/github`
+   - Payload URL: `https://<your-tunnel>.trycloudflare.com/webhooks/github`
    - Content type: `application/json`
    - Secret: your `GITHUB_WEBHOOK_SECRET`
    - Events: *Let me select individual events* → **Pull requests**, **Pull request reviews**, **Pull request review comments**, **Pull request review threads**, **Issue comments**
@@ -64,17 +64,17 @@ Note: `trycloudflare.com` quick-tunnel URLs change whenever `cloudflared` restar
 
 ## Deploy on Fly.io
 
-`fly.toml` deploys the bot as the Fly app `gh-review-dm-bot` (Fly rejects app names containing "github") on one always-on machine in Frankfurt, so it doesn't need your machine or a tunnel. Run these from `slack-dm-bot/`:
+`fly.toml` deploys the bot as the Fly app `example-bot-url` (Fly rejects app names containing "github") on one always-on machine in Frankfurt, so it doesn't need your machine or a tunnel. Run these from `slack-dm-bot/`:
 
 ```sh
-fly apps create gh-review-dm-bot --org personal   # first time only
+fly apps create example-bot-url --org personal   # first time only
 rg '^(GITHUB_WEBHOOK_SECRET|GITHUB_USERNAME|SLACK_BOT_TOKEN|SLACK_USER_ID)=' .env \
   | fly secrets import --stage
 fly deploy --ha=false
-curl https://gh-review-dm-bot.fly.dev/healthz   # -> ok
+curl https://example-bot-url.fly.dev/healthz   # -> ok
 ```
 
-`--ha=false` keeps a single machine. Each machine has its own dedupe database, so two machines could each send the same delivery. Then set each GitHub webhook's Payload URL to `https://gh-review-dm-bot.fly.dev/webhooks/github`, and stop the local container and tunnel so you don't get two DMs per event.
+`--ha=false` keeps a single machine. Each machine has its own dedupe database, so two machines could each send the same delivery. Then set each GitHub webhook's Payload URL to `https://example-bot-url.fly.dev/webhooks/github`, and stop the local container and tunnel so you don't get two DMs per event.
 
 There is no volume, so the delivery dedupe history resets on each deploy. That only matters if you manually redeliver an old webhook. To redeploy after changing `app.py`, run `fly deploy` again. Logs: `fly logs`.
 
@@ -83,7 +83,7 @@ There is no volume, so the delivery dedupe history resets on each deploy. That o
 `.github/workflows/ci.yml` redeploys the bot on every push to `main` that touches `slack-dm-bot/**`. It runs the unit tests first, then `flyctl deploy --ha=false --remote-only`. Create a deploy token once and add it as the repo secret `FLY_API_TOKEN`:
 
 ```sh
-fly tokens create deploy -a gh-review-dm-bot
+fly tokens create deploy -a example-bot-url
 # paste into GitHub → Settings → Secrets and variables → Actions → New repository secret
 ```
 
@@ -101,7 +101,7 @@ With the container running, send a signed fake PR comment through the tunnel. Yo
 
 ```sh
 set -a; . ./.env; set +a
-URL=https://sense-indicators-powers-emerging.trycloudflare.com/webhooks/github
+URL=https://<your-tunnel>.trycloudflare.com/webhooks/github
 BODY=$(cat <<JSON
 {"action":"created","sender":{"login":"smoke-tester"},
  "repository":{"full_name":"example/repo"},
