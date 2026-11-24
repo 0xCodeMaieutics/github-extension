@@ -1,0 +1,43 @@
+name: Deploy slack-dm-bot to Fly
+
+# Deploy the bot whenever its code changes on main. The path filter keeps
+# unrelated changes (the browser extension, docs) from triggering a deploy.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "slack-dm-bot/**"
+  workflow_dispatch: {}
+
+# One deploy at a time; cancel an in-flight run if a newer commit lands.
+concurrency:
+  group: deploy-slack-dm-bot
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: slack-dm-bot
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Run unit tests
+        run: python -m unittest -v
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    # Only the real branch deploys; a manual run on any branch is allowed.
+    concurrency: deploy-slack-dm-bot-fly
+    steps:
+      - uses: actions/checkout@v5
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: Deploy to Fly
+        working-directory: slack-dm-bot
+        run: flyctl deploy --ha=false --remote-only
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
