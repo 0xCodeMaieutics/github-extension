@@ -176,10 +176,6 @@ class WebhookTests(unittest.TestCase):
         self.assertEqual(self.post("push", {"ref": "refs/heads/main"})[1], "ignored")
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 
 SHA = "abc123"
 OPEN_PR = dict(MY_PR, state="open", head={"sha": SHA})
@@ -195,7 +191,9 @@ class CITests(unittest.TestCase):
                 raise app.SlackError("boom")
             self.sent.append(text)
 
-        self.app = app.App(SECRET, ME, "xoxb-test", "U123", FakeStore(), send=send)
+        self.now = 1000.0
+        self.app = app.App(SECRET, ME, "xoxb-test", "U123", FakeStore(), send=send,
+                           settle_seconds=60, clock=lambda: self.now)
         self.deliveries = 0
         self.run_ids = {}
 
@@ -211,6 +209,11 @@ class CITests(unittest.TestCase):
     def pr_event(self, action="synchronize", pr=OPEN_PR):
         return self.post("pull_request", {"action": action, "pull_request": pr,
                                           "sender": {"login": ME}})
+
+    def settle(self, seconds=60):
+        """Let time pass, then run the server's between-requests flush."""
+        self.now += seconds
+        self.app.flush_ci()
 
     def check(self, name, conclusion=None, action=None, run_id=None, sha=SHA):
         """A check_run event; a new run id per name unless given."""
@@ -231,12 +234,41 @@ class CITests(unittest.TestCase):
         self.check("lint")
         self.check("test")
         self.assertEqual(self.check("lint", "success"), (200, "ignored"))  # test still queued
-        self.assertEqual(self.check("test", "success"), (200, "notified"))
-        self.assertEqual(self.check("test", "success"), (200, "already notified"))
+        self.assertEqual(self.check("test", "success"), (200, "ignored"))  # green, settling
+        self.settle(59)
+        self.assertEqual(self.sent, [])
+        self.settle(1)
+        self.check("test", "success")
+        self.settle()
         self.assertEqual(self.sent, [
             ":white_check_mark: All checks passed on "
             "<https://github.com/acme/widgets/pull/7/checks|acme/widgets#7: Add &lt;widgets&gt; &amp; things>"
         ])
+
+    def test_green_waits_for_late_checks(self):
+        # PR 2698: a fast status went green before the CI jobs had registered.
+        self.pr_event("opened")
+        self.post("status", {"id": 1, "sha": SHA, "context": "vercel", "state": "success"})
+        self.settle(10)
+        self.check("build")  # job registers late
+        self.settle(60)
+        self.assertEqual(self.sent, [])
+        self.check("build", "success")
+        self.settle(30)
+        self.check("e2e")  # dependent job starts after build
+        self.check("e2e", "success")
+        self.settle(59)
+        self.assertEqual(self.sent, [])  # e2e pushed the window back
+        self.settle(1)
+        self.assertEqual(len(self.sent), 1)
+        self.assertIn("All checks passed", self.sent[0])
+
+    def test_green_dropped_if_head_moves(self):
+        self.pr_event()
+        self.check("lint", "success")
+        self.pr_event(pr=dict(OPEN_PR, head={"sha": "newer"}))
+        self.settle()
+        self.assertEqual(self.sent, [])
 
     def test_first_failure_notifies_without_waiting(self):
         self.pr_event()
@@ -251,30 +283,37 @@ class CITests(unittest.TestCase):
         self.pr_event()
         self.check("lint", "failure")
         self.check("lint", run_id=99)  # re-run is a new check run
-        self.assertEqual(self.check("lint", "success", run_id=99), (200, "notified"))
+        self.check("lint", "success", run_id=99)
+        self.settle()
         self.assertIn("All checks passed", self.sent[1])
 
     def test_out_of_order_deliveries(self):
         self.pr_event()
         self.check("lint", "success", run_id=5)
-        self.assertEqual(self.check("lint", run_id=5), (200, "already notified"))  # late "created"
-        self.assertEqual(self.check("lint", "failure", run_id=4), (200, "already notified"))  # older run
+        self.check("lint", run_id=5)  # late "created"
+        self.check("lint", "failure", run_id=4)  # older run
+        self.settle()
         self.assertEqual(len(self.sent), 1)
+        self.assertIn("All checks passed", self.sent[0])
 
     def test_commit_statuses(self):
         self.pr_event()
         self.check("lint", "success")  # green so far
         self.post("status", {"id": 1, "sha": SHA, "context": "ci/legacy", "state": "pending"})
+        self.settle()
+        self.assertEqual(self.sent, [])  # went pending before the window closed
         self.assertEqual(
             self.post("status", {"id": 2, "sha": SHA, "context": "ci/legacy", "state": "error",
                                  "target_url": None}),
             (200, "notified"))
-        self.assertEqual(len(self.sent), 2)
-        self.assertTrue(self.sent[1].endswith(": ci/legacy"))
+        self.assertEqual(len(self.sent), 1)
+        self.assertTrue(self.sent[0].endswith(": ci/legacy"))
 
     def test_ci_done_before_pr_opened(self):
         self.check("lint", "success")
-        self.assertEqual(self.pr_event("opened"), (200, "notified"))
+        self.pr_event("opened")
+        self.settle()
+        self.assertEqual(len(self.sent), 1)
 
     def test_unknown_pr_ignored(self):
         self.assertEqual(self.check("lint", "success"), (200, "ignored"))
@@ -286,11 +325,25 @@ class CITests(unittest.TestCase):
         self.assertEqual(self.check("test", "success"), (200, "ignored"))
         self.pr_event("closed", pr=dict(OPEN_PR, state="closed"))
         self.assertEqual(self.check("docs", "success"), (200, "ignored"))
+        self.settle()
         self.assertEqual(self.sent, [])
 
     def test_slack_failure_allows_retry(self):
         self.pr_event()
         self.fail_send = True
-        self.assertEqual(self.check("lint", "success")[0], 502)
+        self.assertEqual(self.check("lint", "failure")[0], 502)
         self.fail_send = False
-        self.assertEqual(self.check("lint", "success"), (200, "notified"))
+        self.assertEqual(self.check("lint", "failure"), (200, "notified"))
+
+    def test_slack_failure_retries_green(self):
+        self.pr_event()
+        self.check("lint", "success")
+        self.fail_send = True
+        self.settle()
+        self.fail_send = False
+        self.settle(app.SLACK_RETRY_SECONDS)
+        self.assertEqual(len(self.sent), 1)
+
+
+if __name__ == "__main__":
+    unittest.main()

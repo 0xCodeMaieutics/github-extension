@@ -183,9 +183,18 @@ def build_message(event, payload, me):
 # looks at the whole set each time one changes. The result is DMed once per
 # commit and outcome: the first failure, and all checks green. PR author and
 # title come from the pull_request* events, which carry the full PR.
+#
+# A failure is final, so it is sent right away. "All green" is not: check runs
+# appear only once their job starts (a dependent job starts after the one
+# before it finishes), and webhooks arrive out of order, so a commit can look
+# green while most of its CI hasn't reported yet. The green DM therefore waits
+# until the commit has been all green, with no check activity, for
+# CI_SETTLE_SECONDS.
 
 CI_EVENTS = ("check_run", "status")
 CHECK_OK = ("success", "neutral", "skipped")
+CI_SETTLE_SECONDS = 60
+SLACK_RETRY_SECONDS = 60
 
 
 def ci_update(event, payload):
@@ -271,6 +280,10 @@ class DeliveryStore:
             " repo TEXT, sha TEXT, key TEXT, name TEXT, run_id INTEGER, state TEXT,"
             " url TEXT, updated_at INTEGER NOT NULL, PRIMARY KEY (repo, sha, key))"
         )
+        self.db.execute(
+            "CREATE TABLE IF NOT EXISTS ci_pending ("
+            " repo TEXT, sha TEXT, due_at REAL NOT NULL, PRIMARY KEY (repo, sha))"
+        )
         cutoff = int(time.time()) - DELIVERY_RETENTION_DAYS * 86400
         self.db.execute("DELETE FROM deliveries WHERE received_at < ?", (cutoff,))
         self.db.execute("DELETE FROM ci_notifications WHERE notified_at < ?", (cutoff,))
@@ -337,6 +350,18 @@ class DeliveryStore:
             (repo, sha, key, name, run_id, state, url, int(time.time())),
         )
 
+    def schedule_ci(self, repo, sha, due_at):
+        """(Re)schedule a green check for a commit; later calls push it back."""
+        self.db.execute("INSERT OR REPLACE INTO ci_pending VALUES (?, ?, ?)", (repo, sha, due_at))
+
+    def pop_due_ci(self, now):
+        rows = self.db.execute(
+            "SELECT repo, sha FROM ci_pending WHERE due_at <= ? ORDER BY due_at", (now,)
+        ).fetchall()
+        for repo, sha in rows:
+            self.db.execute("DELETE FROM ci_pending WHERE repo = ? AND sha = ?", (repo, sha))
+        return rows
+
     def checks_at(self, repo, sha):
         return self.db.execute(
             "SELECT name, state, url FROM checks WHERE repo = ? AND sha = ? ORDER BY name",
@@ -372,13 +397,15 @@ def send_slack_dm(token, user_id, text):
 
 class App:
     def __init__(self, webhook_secret, github_username, slack_token, slack_user_id, store,
-                 send=send_slack_dm):
+                 send=send_slack_dm, settle_seconds=CI_SETTLE_SECONDS, clock=time.time):
         self.webhook_secret = webhook_secret
         self.github_username = github_username
         self.slack_token = slack_token
         self.slack_user_id = slack_user_id
         self.store = store
         self.send = send
+        self.settle_seconds = settle_seconds
+        self.clock = clock
 
     def handle_webhook(self, headers, body):
         """Returns (status, response text)."""
@@ -446,18 +473,49 @@ class App:
         return self.ci_result(update[0], update[1])
 
     def ci_result(self, repo, sha):
+        """(message, dedupe key) for a failure; a green result is only scheduled."""
+        result = self.ci_evaluate(repo, sha)
+        if result is None:
+            return None, None
+        message, key = result
+        if key.endswith(":passed"):
+            self.store.schedule_ci(repo, sha, self.clock() + self.settle_seconds)
+            return None, None
+        return message, key
+
+    def ci_evaluate(self, repo, sha):
         pr = next(
             (p for p in self.store.open_prs_at(repo, sha)
              if same_user(p["author"], self.github_username)),
             None,
         )
         if pr is None:
-            return None, None
+            return None
         result = ci_outcome(self.store.checks_at(repo, sha))
         if result is None:
-            return None, None
+            return None
         outcome, failed = result
         return format_ci_message(outcome, failed, repo, pr), f"{repo}@{sha}:{outcome}"
+
+    def flush_ci(self):
+        """Send green DMs for commits that stayed all green through the settle window."""
+        now = self.clock()
+        for repo, sha in self.store.pop_due_ci(now):
+            # Re-check: the PR may have moved on, or a check may have gone pending/red.
+            result = self.ci_evaluate(repo, sha)
+            if result is None or not result[1].endswith(":passed"):
+                continue
+            message, key = result
+            if not self.store.claim_ci(key):
+                continue
+            try:
+                self.send(self.slack_token, self.slack_user_id, message)
+            except SlackError as exc:
+                self.store.release_ci(key)
+                self.store.schedule_ci(repo, sha, now + SLACK_RETRY_SECONDS)
+                log.error("%s: Slack send failed, retrying: %s", key, exc)
+                continue
+            log.info("%s: notified", key)
 
 
 def make_handler(app):
@@ -497,6 +555,19 @@ def make_handler(app):
     return Handler
 
 
+class Server(HTTPServer):
+    def __init__(self, address, app):
+        super().__init__(address, make_handler(app))
+        self.app = app
+
+    def service_actions(self):
+        # Runs between requests on the serving thread, so it never races a webhook.
+        try:
+            self.app.flush_ci()
+        except Exception:
+            log.exception("flushing CI notifications failed")
+
+
 def require_env(name):
     value = os.environ.get(name, "").strip()
     if not value:
@@ -515,15 +586,16 @@ def main():
         slack_token=require_env("SLACK_BOT_TOKEN"),
         slack_user_id=require_env("SLACK_USER_ID"),
         store=DeliveryStore(os.environ.get("DB_PATH", "/data/deliveries.sqlite3")),
+        settle_seconds=float(os.environ.get("CI_SETTLE_SECONDS", CI_SETTLE_SECONDS)),
     )
     host = os.environ.get("HOST", "0.0.0.0")
     port = int(os.environ.get("PORT", "8083"))
     # Single-threaded on purpose: one user's webhook volume is tiny, and it
     # keeps the SQLite claim/send/release sequence free of races.
-    server = HTTPServer((host, port), make_handler(app))
+    server = Server((host, port), app)
     log.info("listening on %s:%d%s for GitHub user %s", host, port, WEBHOOK_PATH, app.github_username)
     try:
-        server.serve_forever()
+        server.serve_forever(poll_interval=1)
     except KeyboardInterrupt:
         pass
 
